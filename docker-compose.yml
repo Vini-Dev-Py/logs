@@ -1,0 +1,106 @@
+services:
+  traefik:
+    image: traefik:v3.1
+    command:
+      - --api.insecure=true
+      - --providers.docker=true
+      - --entrypoints.web.address=:80
+    ports:
+      - "80:80"
+      - "8080:8080"
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+
+  postgres:
+    image: postgres:16
+    environment:
+      POSTGRES_USER: logs
+      POSTGRES_PASSWORD: logs
+      POSTGRES_DB: logs
+    ports:
+      - "5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U logs"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  rabbitmq:
+    image: rabbitmq:3-management
+    ports:
+      - "5672:5672"
+      - "15672:15672"
+
+  cassandra:
+    image: cassandra:5.0
+    ports:
+      - "9042:9042"
+
+  logs-bff:
+    build: ./apps/logs-bff
+    environment:
+      PORT: 8081
+      DATABASE_URL: postgres://logs:logs@postgres:5432/logs?sslmode=disable
+      JWT_SECRET: super-secret
+      QUERY_URL: http://logs-query:8084
+    depends_on:
+      postgres:
+        condition: service_healthy
+    labels:
+      - traefik.enable=true
+      - traefik.http.routers.logs-bff.rule=PathPrefix(`/api`)
+      - traefik.http.routers.logs-bff.entrypoints=web
+      - traefik.http.services.logs-bff.loadbalancer.server.port=8081
+
+  logs-ingest:
+    build: ./apps/logs-ingest
+    environment:
+      PORT: 8082
+      DATABASE_URL: postgres://logs:logs@postgres:5432/logs?sslmode=disable
+      RABBITMQ_URL: amqp://guest:guest@rabbitmq:5672/
+    depends_on:
+      postgres:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_started
+    deploy:
+      replicas: 2
+    labels:
+      - traefik.enable=true
+      - traefik.http.routers.logs-ingest.rule=PathPrefix(`/ingest`)
+      - traefik.http.routers.logs-ingest.entrypoints=web
+      - traefik.http.services.logs-ingest.loadbalancer.server.port=8082
+
+  logs-worker:
+    build: ./apps/logs-worker
+    environment:
+      RABBITMQ_URL: amqp://guest:guest@rabbitmq:5672/
+      CASSANDRA_HOSTS: cassandra
+    depends_on:
+      - rabbitmq
+      - cassandra
+    deploy:
+      replicas: 2
+
+  logs-query:
+    build: ./apps/logs-query
+    environment:
+      PORT: 8084
+      CASSANDRA_HOSTS: cassandra
+    depends_on:
+      - cassandra
+    labels:
+      - traefik.enable=true
+      - traefik.http.routers.logs-query.rule=PathPrefix(`/query`)
+      - traefik.http.routers.logs-query.entrypoints=web
+      - traefik.http.services.logs-query.loadbalancer.server.port=8084
+
+  web:
+    build: ./apps/web
+    environment:
+      VITE_API_BASE: /api
+    labels:
+      - traefik.enable=true
+      - traefik.http.routers.web.rule=PathPrefix(`/`)
+      - traefik.http.routers.web.entrypoints=web
+      - traefik.http.services.web.loadbalancer.server.port=5173
