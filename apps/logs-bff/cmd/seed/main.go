@@ -12,7 +12,9 @@ import (
 
 func main() {
 	db, err := pgxpool.New(context.Background(), env("DATABASE_URL", "postgres://logs:logs@localhost:5432/logs?sslmode=disable"))
-	if err != nil { panic(err) }
+	if err != nil {
+		panic(err)
+	}
 	defer db.Close()
 
 	companyID := uuid.NewString()
@@ -25,4 +27,9 @@ func main() {
 	fmt.Println("email=admin@logs.local password=admin123 apiKey=logs_dev_api_key")
 }
 
-func env(k, d string) string { if v:=os.Getenv(k); v!="" { return v }; return d }
+func env(k, d string) string {
+	if v := os.Getenv(k); v != "" {
+		return v
+	}
+	return d
+}
