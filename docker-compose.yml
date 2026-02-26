@@ -19,6 +19,8 @@ services:
       POSTGRES_DB: logs
     ports:
       - "5432:5432"
+    volumes:
+      - ./infra/migrations:/workspace/infra/migrations:ro
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U logs"]
       interval: 5s
@@ -30,11 +32,43 @@ services:
     ports:
       - "5672:5672"
       - "15672:15672"
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "-q", "ping"]
+      interval: 5s
+      timeout: 15s
+      retries: 5
 
   cassandra:
     image: cassandra:5.0
     ports:
       - "9042:9042"
+    volumes:
+      - ./infra/cassandra:/workspace/infra/cassandra:ro
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          "echo 'describe keyspaces;' | cqlsh -u cassandra -p cassandra || exit 1",
+        ]
+      interval: 10s
+      timeout: 10s
+      retries: 15
+
+  cassandra-web:
+    image: ipushc/cassandra-web
+    environment:
+      CASSANDRA_HOSTS: cassandra
+      CASSANDRA_PORT: 9042
+    ports:
+      - "3000:8083"
+    depends_on:
+      cassandra:
+        condition: service_healthy
+    labels:
+      - traefik.enable=true
+      - traefik.http.routers.cassandra-web.rule=PathPrefix(`/cassandra`)
+      - traefik.http.routers.cassandra-web.entrypoints=web
+      - traefik.http.services.cassandra-web.loadbalancer.server.port=8083
 
   logs-bff:
     build: ./apps/logs-bff
@@ -62,7 +96,7 @@ services:
       postgres:
         condition: service_healthy
       rabbitmq:
-        condition: service_started
+        condition: service_healthy
     deploy:
       replicas: 2
     labels:
@@ -77,8 +111,10 @@ services:
       RABBITMQ_URL: amqp://guest:guest@rabbitmq:5672/
       CASSANDRA_HOSTS: cassandra
     depends_on:
-      - rabbitmq
-      - cassandra
+      rabbitmq:
+        condition: service_healthy
+      cassandra:
+        condition: service_healthy
     deploy:
       replicas: 2
 
@@ -88,7 +124,8 @@ services:
       PORT: 8084
       CASSANDRA_HOSTS: cassandra
     depends_on:
-      - cassandra
+      cassandra:
+        condition: service_healthy
     labels:
       - traefik.enable=true
       - traefik.http.routers.logs-query.rule=PathPrefix(`/query`)
