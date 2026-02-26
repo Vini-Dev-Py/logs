@@ -38,6 +38,29 @@ services:
       timeout: 15s
       retries: 5
 
+  opensearch:
+    image: opensearchproject/opensearch:2.11.1
+    environment:
+      - discovery.type=single-node
+      - plugins.security.disabled=true
+      - OPENSEARCH_JAVA_OPTS=-Xms512m -Xmx512m
+    ports:
+      - "9200:9200"
+      - "9600:9600"
+    healthcheck:
+      test:
+        ["CMD-SHELL", "curl -s http://localhost:9200 | grep -q 'cluster_name'"]
+      interval: 10s
+      timeout: 10s
+      retries: 5
+    labels:
+      - traefik.enable=true
+      - traefik.http.routers.opensearch.rule=PathPrefix(`/opensearch`)
+      - traefik.http.routers.opensearch.middlewares=opensearch-strip
+      - traefik.http.middlewares.opensearch-strip.stripprefix.prefixes=/opensearch
+      - traefik.http.routers.opensearch.entrypoints=web
+      - traefik.http.services.opensearch.loadbalancer.server.port=9200
+
   cassandra:
     image: cassandra:5.0
     ports:
@@ -71,7 +94,9 @@ services:
       - traefik.http.services.cassandra-web.loadbalancer.server.port=8083
 
   logs-bff:
-    build: ./apps/logs-bff
+    build:
+      context: .
+      dockerfile: ./apps/logs-bff/Dockerfile
     environment:
       PORT: 8081
       DATABASE_URL: postgres://logs:logs@postgres:5432/logs?sslmode=disable
@@ -87,7 +112,9 @@ services:
       - traefik.http.services.logs-bff.loadbalancer.server.port=8081
 
   logs-ingest:
-    build: ./apps/logs-ingest
+    build:
+      context: .
+      dockerfile: ./apps/logs-ingest/Dockerfile
     environment:
       PORT: 8082
       DATABASE_URL: postgres://logs:logs@postgres:5432/logs?sslmode=disable
@@ -98,7 +125,7 @@ services:
       rabbitmq:
         condition: service_healthy
     deploy:
-      replicas: 2
+      replicas: 1
     labels:
       - traefik.enable=true
       - traefik.http.routers.logs-ingest.rule=PathPrefix(`/ingest`)
@@ -106,7 +133,9 @@ services:
       - traefik.http.services.logs-ingest.loadbalancer.server.port=8082
 
   logs-worker:
-    build: ./apps/logs-worker
+    build:
+      context: .
+      dockerfile: ./apps/logs-worker/Dockerfile
     environment:
       RABBITMQ_URL: amqp://guest:guest@rabbitmq:5672/
       CASSANDRA_HOSTS: cassandra
@@ -116,10 +145,12 @@ services:
       cassandra:
         condition: service_healthy
     deploy:
-      replicas: 2
+      replicas: 1
 
   logs-query:
-    build: ./apps/logs-query
+    build:
+      context: .
+      dockerfile: ./apps/logs-query/Dockerfile
     environment:
       PORT: 8084
       CASSANDRA_HOSTS: cassandra

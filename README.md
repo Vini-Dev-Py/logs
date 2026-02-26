@@ -72,12 +72,12 @@ O Logs transforma isso em:
 
 ### 🗄️ Bancos
 
-| Banco               | Uso                                 |
-| ------------------- | ----------------------------------- |
-| PostgreSQL          | usuários, empresas, permissões      |
-| Cassandra           | armazenamento de logs (alta escala) |
-| RabbitMQ            | fila de processamento               |
-| (Futuro) OpenSearch | busca textual                       |
+| Banco              | Uso                                 |
+| ------------------ | ----------------------------------- |
+| PostgreSQL         | usuários, empresas, permissões      |
+| Cassandra          | armazenamento de logs (alta escala) |
+| RabbitMQ           | fila de processamento               |
+| OpenSearch (v2.11) | busca textual por logs              |
 
 ---
 
@@ -201,6 +201,7 @@ Authorization: Bearer <API_KEY>
 
 - Docker
 - Docker Compose
+- **Nota (Linux/WSL):** O OpenSearch requer aumento de memória virtual configurado no host. Rode: `sudo sysctl -w vm.max_map_count=262144` e adicione em `/etc/sysctl.conf` para persistir.
 
 ---
 
@@ -242,11 +243,12 @@ Isso cria:
 
 ### 🌐 Acessos
 
-| Serviço  | URL                     |
-| -------- | ----------------------- |
-| Frontend | http://localhost:5173   |
-| API BFF  | http://localhost/api    |
-| Ingest   | http://localhost/ingest |
+| Serviço    | URL                     |
+| ---------- | ----------------------- |
+| Frontend   | http://localhost:5173   |
+| API BFF    | http://localhost/api    |
+| Ingest     | http://localhost/ingest |
+| OpenSearch | http://localhost:9200   |
 
 ---
 
@@ -274,7 +276,7 @@ curl -X POST http://localhost/ingest/v1/log-events \
 
 ### Próximos passos
 
-- [ ] Busca textual (OpenSearch)
+- [x] Busca textual (OpenSearch)
 - [ ] Correlação com métricas (CPU, RAM)
 - [ ] Auto-instrumentação (OpenTelemetry)
 - [ ] RBAC avançado

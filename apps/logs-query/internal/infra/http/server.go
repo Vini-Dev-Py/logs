@@ -6,18 +6,25 @@ import (
 	"time"
 
 	"logs-query/internal/infra/cassandra"
+	search "shared-search"
 
 	"github.com/go-chi/chi/v5"
 )
 
-type Server struct{ repo cassandra.Repo }
+type Server struct {
+	repo   cassandra.Repo
+	search search.Client
+}
 
-func New(repo cassandra.Repo) *Server { return &Server{repo: repo} }
+func New(repo cassandra.Repo, sc search.Client) *Server {
+	return &Server{repo: repo, search: sc}
+}
 
 func (s *Server) Handler() http.Handler {
 	r := chi.NewRouter()
 	r.Get("/query/v1/traces", s.list)
 	r.Get("/query/v1/traces/{traceId}", s.byID)
+	r.Get("/query/v1/search", s.searchNodes)
 	return r
 }
 
@@ -44,4 +51,27 @@ func (s *Server) byID(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	_ = json.NewEncoder(w).Encode(graph)
+}
+
+func (s *Server) searchNodes(w http.ResponseWriter, r *http.Request) {
+	companyID := r.URL.Query().Get("companyId")
+	query := r.URL.Query().Get("query")
+
+	if companyID == "" || query == "" {
+		http.Error(w, "companyId and query required", http.StatusBadRequest)
+		return
+	}
+
+	if s.search == nil {
+		http.Error(w, "search not available", http.StatusServiceUnavailable)
+		return
+	}
+
+	results, err := s.search.Search(r.Context(), "nodes", query, companyID)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	_ = json.NewEncoder(w).Encode(map[string]any{"items": results})
 }

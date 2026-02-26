@@ -34,6 +34,7 @@ func (s *Server) Handler() http.Handler {
 		pr.Post("/api/traces/{traceId}/annotations", s.createAnnotation)
 		pr.Put("/api/annotations/{id}", s.updateAnnotation)
 		pr.Delete("/api/annotations/{id}", s.deleteAnnotation)
+		pr.Get("/api/search", s.searchNodes)
 	})
 	return r
 }
@@ -144,4 +145,32 @@ func (s *Server) deleteAnnotation(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	w.WriteHeader(http.StatusNoContent)
+}
+
+func (s *Server) searchNodes(w http.ResponseWriter, r *http.Request) {
+	cid := r.Context().Value("companyId").(string)
+	query := r.URL.Query().Get("query")
+
+	if query == "" {
+		http.Error(w, "query is required", http.StatusBadRequest)
+		return
+	}
+
+	url := fmt.Sprintf("%s/query/v1/search?companyId=%s&query=%s", s.cfg.QueryURL, cid, query)
+	req, err := http.NewRequestWithContext(r.Context(), http.MethodGet, url, nil)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	defer resp.Body.Close()
+
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(resp.StatusCode)
+	_, _ = io.Copy(w, resp.Body)
 }

@@ -1,15 +1,21 @@
 package cassandra
 
 import (
+	"context"
 	"encoding/json"
+	"fmt"
 	"time"
 
 	"logs-worker/internal/app"
+	search "shared-search"
 
 	"github.com/gocql/gocql"
 )
 
-type Repo struct{ Session *gocql.Session }
+type Repo struct {
+	Session *gocql.Session
+	Search  search.Client
+}
 
 func (r Repo) Persist(e app.Event) error {
 	applied, err := r.Session.Query("INSERT INTO event_dedup(company_id,event_id,received_at) VALUES(?,?,?) IF NOT EXISTS", e.CompanyID, e.EventID, time.Now()).ScanCAS()
@@ -36,6 +42,27 @@ func (r Repo) Persist(e app.Event) error {
 	if e.ParentNodeID != nil && *e.ParentNodeID != "" {
 		_ = r.Session.Query("INSERT INTO edges_by_trace(trace_id,from_node_id,to_node_id,kind) VALUES(?,?,?,?)", e.TraceID, *e.ParentNodeID, e.NodeID, "PARENT_CHILD").Exec()
 	}
+
+	// Index in OpenSearch
+	if r.Search != nil {
+		doc := map[string]interface{}{
+			"traceId":     e.TraceID,
+			"nodeId":      e.NodeID,
+			"companyId":   e.CompanyID,
+			"serviceName": e.ServiceName,
+			"type":        typeOp,
+			"name":        name,
+			"dbSystem":    dbSystem,
+			"dbQuery":     dbQuery,
+			"httpPath":    hPath,
+			"metadata":    string(meta),
+		}
+		docID := fmt.Sprintf("%s_%s", e.CompanyID, e.NodeID)
+		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+		_ = r.Search.Index(ctx, "nodes", docID, doc)
+		cancel()
+	}
+
 	day := start.Format("2006-01-02")
 	return r.Session.Query(`INSERT INTO traces_by_company_day(company_id,day,started_at,trace_id,status,root_operation,service_name,http_method,http_path,http_status,duration_ms)
 	VALUES (?,?,?,?,?,?,?,?,?,?,?)`, e.CompanyID, day, start, e.TraceID, status, name, e.ServiceName, hMethod, hPath, hStatus, duration).Exec()
