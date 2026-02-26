@@ -1,0 +1,29 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "LogEvent",
+  "type": "object",
+  "required": ["traceId", "nodeId", "serviceName", "operation"],
+  "properties": {
+    "eventId": {"type": "string"},
+    "companyId": {"type": "string"},
+    "traceId": {"type": "string"},
+    "nodeId": {"type": "string"},
+    "parentNodeId": {"type": ["string", "null"]},
+    "serviceName": {"type": "string"},
+    "operation": {
+      "type": "object",
+      "required": ["type", "name", "status"],
+      "properties": {
+        "type": {"type": "string"},
+        "name": {"type": "string"},
+        "status": {"type": "string"},
+        "startAt": {"type": "string", "format": "date-time"},
+        "endAt": {"type": "string", "format": "date-time"},
+        "durationMs": {"type": "number"}
+      }
+    },
+    "http": {"type": "object"},
+    "db": {"type": "object"},
+    "metadata": {"type": "object"}
+  }
+}

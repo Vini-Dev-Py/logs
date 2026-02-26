@@ -1,0 +1,31 @@
+CREATE TABLE IF NOT EXISTS companies (
+  id UUID PRIMARY KEY,
+  name TEXT NOT NULL,
+  plan_user_limit INT NOT NULL DEFAULT 10,
+  api_key TEXT NOT NULL UNIQUE,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE TABLE IF NOT EXISTS users (
+  id UUID PRIMARY KEY,
+  company_id UUID NOT NULL REFERENCES companies(id) ON DELETE CASCADE,
+  name TEXT NOT NULL,
+  email TEXT NOT NULL UNIQUE,
+  password_hash TEXT NOT NULL,
+  role TEXT NOT NULL DEFAULT 'MEMBER',
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE TABLE IF NOT EXISTS annotations (
+  id UUID PRIMARY KEY,
+  company_id UUID NOT NULL REFERENCES companies(id) ON DELETE CASCADE,
+  trace_id TEXT NOT NULL,
+  node_id TEXT NOT NULL,
+  x DOUBLE PRECISION NOT NULL,
+  y DOUBLE PRECISION NOT NULL,
+  text TEXT NOT NULL,
+  created_by UUID NOT NULL REFERENCES users(id),
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_annotations_company_trace ON annotations(company_id, trace_id);
