@@ -11,6 +11,7 @@ Suas responsabilidades incluem:
 1. Recuperar todos os `Traces` consolidados dentro de uma janela de tempo (ex: últimos 30 min) para uma Company Específica.
 2. Recuperar todos os metadados brutos (Nodes, Edges, e Annotations) de um `Trace` em foco.
 3. Buscar texto livre cruzando `node ID`, `name` (operações) e `dbQuery` utilizando o **OpenSearch**.
+4. Cruzar e extrair dados temporais do **Prometheus** da plataforma (seu TSDB de métricas externas) combinando o `startAt` e `endAt` dos nós baseados em seus `serviceNames`, permitindo que o React exiba gráficos de consumo lado a lado com a rastreabilidade.
 
 ## 🚀 Uso e Exemplos de Requisição
 

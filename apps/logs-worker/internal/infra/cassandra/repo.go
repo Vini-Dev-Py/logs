@@ -64,6 +64,13 @@ func (r Repo) Persist(e app.Event) error {
 	}
 
 	day := start.Format("2006-01-02")
+	
+	// Increment endpoint counters
+	if typeOp == "HTTP" && hMethod != "" && hPath != "" {
+		_ = r.Session.Query(`UPDATE endpoint_calls_by_company_day SET calls = calls + 1 WHERE company_id=? AND day=? AND service_name=? AND http_method=? AND http_path=?`,
+			e.CompanyID, day, e.ServiceName, hMethod, hPath).Exec()
+	}
+
 	return r.Session.Query(`INSERT INTO traces_by_company_day(company_id,day,started_at,trace_id,status,root_operation,service_name,http_method,http_path,http_status,duration_ms)
 	VALUES (?,?,?,?,?,?,?,?,?,?,?)`, e.CompanyID, day, start, e.TraceID, status, name, e.ServiceName, hMethod, hPath, hStatus, duration).Exec()
 }

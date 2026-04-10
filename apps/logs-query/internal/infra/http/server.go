@@ -25,6 +25,7 @@ func (s *Server) Handler() http.Handler {
 	r.Get("/query/v1/traces", s.list)
 	r.Get("/query/v1/traces/{traceId}", s.byID)
 	r.Get("/query/v1/search", s.searchNodes)
+	r.Get("/query/v1/metrics/endpoints", s.endpoints)
 	return r
 }
 
@@ -74,4 +75,25 @@ func (s *Server) searchNodes(w http.ResponseWriter, r *http.Request) {
 	}
 
 	_ = json.NewEncoder(w).Encode(map[string]any{"items": results})
+}
+
+func (s *Server) endpoints(w http.ResponseWriter, r *http.Request) {
+	companyID := r.URL.Query().Get("companyId")
+	day := r.URL.Query().Get("day")
+	if day == "" {
+		day = time.Now().Format("2006-01-02")
+	}
+
+	if companyID == "" {
+		http.Error(w, "companyId is required", http.StatusBadRequest)
+		return
+	}
+
+	endpoints, err := s.repo.ListEndpoints(companyID, day)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	_ = json.NewEncoder(w).Encode(map[string]any{"items": endpoints})
 }

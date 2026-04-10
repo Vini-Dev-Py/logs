@@ -7,8 +7,9 @@ type User struct {
 	CompanyID    string `json:"companyId"`
 	Name         string `json:"name"`
 	Email        string `json:"email"`
-	Role         string `json:"role"`
-	PasswordHash string `json:"-"`
+	Role         string   `json:"role"`
+	Permissions  []string `json:"permissions"`
+	PasswordHash string   `json:"-"`
 }
 
 type Annotation struct {

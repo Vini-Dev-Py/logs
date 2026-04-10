@@ -1,0 +1,55 @@
+{
+  "nav": {
+    "dashboard": "Dashboard",
+    "traces": "Traces",
+    "settings": "Configurações"
+  },
+  "login": {
+    "title": "Logs",
+    "subtitle": "Visual Log Tracing Platform",
+    "email": "E-mail",
+    "password": "Senha",
+    "submit": "Entrar",
+    "submitting": "Entrando...",
+    "error": "Credenciais inválidas"
+  },
+  "traces": {
+    "title": "Traces",
+    "search_placeholder": "Busca textual em logs, SQLs ou metadados... (ex: null_pointer)",
+    "filter_status": "Todos os status",
+    "filter_service_placeholder": "Serviço exato",
+    "col_trace": "Trace ID / Nó",
+    "col_content": "Conteúdo (OpenSearch Match)",
+    "col_datetime": "Data/Hora",
+    "col_endpoint": "Endpoint",
+    "col_status_duration": "Status / Duração",
+    "col_service": "Serviço",
+    "empty": "Nenhum resultado encontrado.",
+    "loading": "Carregando traces..."
+  },
+  "dashboard": {
+    "title": "Dashboard",
+    "subtitle": "Métricas analíticas do seu sistema",
+    "top_endpoints": "Top 10 Caminhos mais acessados hoje",
+    "col_service": "Serviço",
+    "col_endpoint": "Endpoint",
+    "col_calls": "Chamadas",
+    "loading": "Carregando métricas...",
+    "empty": "Nenhum tráfego processado hoje."
+  },
+  "settings": {
+    "title": "Usuários & Acessos",
+    "subtitle": "Controle quem tem acesso à sua empresa e configure suas ocupações.",
+    "col_user": "Usuário",
+    "col_role": "Ocupação / Papel",
+    "no_role": "Sem papel",
+    "loading": "Carregando usuários...",
+    "access_denied": "Acesso negado: você não tem permissão de gerenciar usuários."
+  },
+  "common": {
+    "error": "OK",
+    "status_error": "ERRO",
+    "theme_toggle_light": "Mudar para tema claro",
+    "theme_toggle_dark": "Mudar para tema escuro"
+  }
+}

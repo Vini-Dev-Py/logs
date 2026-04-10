@@ -19,8 +19,13 @@ type Client interface {
 }
 
 type SearchResult struct {
-	TraceID string `json:"traceId"`
-	NodeID  string `json:"nodeId"`
+	TraceID     string `json:"traceId"`
+	NodeID      string `json:"nodeId"`
+	Name        string `json:"name,omitempty"`
+	Type        string `json:"type,omitempty"`
+	DBQuery     string `json:"dbQuery,omitempty"`
+	Metadata    string `json:"metadata,omitempty"`
+	ServiceName string `json:"serviceName,omitempty"`
 }
 
 type clientImpl struct {
@@ -90,7 +95,7 @@ func (c *clientImpl) Search(ctx context.Context, indexName string, query string,
 				]
 			}
 		},
-		"_source": ["traceId", "nodeId"]
+		"_source": ["traceId", "nodeId", "name", "type", "dbQuery", "metadata", "serviceName"]
 	}`, query, companyID)
 
 	req := opensearchapi.SearchRequest{

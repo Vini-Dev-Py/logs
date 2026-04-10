@@ -20,6 +20,7 @@ services:
     ports:
       - "5432:5432"
     volumes:
+      - postgres_data:/var/lib/postgresql/data
       - ./infra/migrations:/workspace/infra/migrations:ro
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U logs"]
@@ -66,6 +67,7 @@ services:
     ports:
       - "9042:9042"
     volumes:
+      - cassandra_data:/var/lib/cassandra
       - ./infra/cassandra:/workspace/infra/cassandra:ro
     healthcheck:
       test:
@@ -102,6 +104,9 @@ services:
       DATABASE_URL: postgres://logs:logs@postgres:5432/logs?sslmode=disable
       JWT_SECRET: super-secret
       QUERY_URL: http://logs-query:8084
+      # Dogfooding: sends its own traces to the OTLP receiver
+      OTEL_EXPORTER_OTLP_ENDPOINT: http://logs-ingest:8082
+      LOGS_API_KEY: logs_dev_api_key
     depends_on:
       postgres:
         condition: service_healthy
@@ -128,9 +133,14 @@ services:
       replicas: 1
     labels:
       - traefik.enable=true
+      # Native ingest route
       - traefik.http.routers.logs-ingest.rule=PathPrefix(`/ingest`)
       - traefik.http.routers.logs-ingest.entrypoints=web
       - traefik.http.services.logs-ingest.loadbalancer.server.port=8082
+      # OTLP receiver route (standard OpenTelemetry endpoint)
+      - "traefik.http.routers.logs-otlp.rule=PathPrefix(`/v1/traces`)"
+      - traefik.http.routers.logs-otlp.entrypoints=web
+      - traefik.http.services.logs-otlp.loadbalancer.server.port=8082
 
   logs-worker:
     build:
@@ -172,3 +182,9 @@ services:
       - traefik.http.routers.web.rule=PathPrefix(`/`)
       - traefik.http.routers.web.entrypoints=web
       - traefik.http.services.web.loadbalancer.server.port=5173
+
+volumes:
+  postgres_data:
+    driver: local
+  cassandra_data:
+    driver: local

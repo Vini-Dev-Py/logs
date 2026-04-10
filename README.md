@@ -288,9 +288,99 @@ curl -X POST http://localhost/ingest/v1/log-events \
 
 Esse projeto não é só mais uma ferramenta de logs.
 
+
 Ele resolve um problema real:
 
 > **"Entender rapidamente o que aconteceu em uma requisição complexa."**
+
+---
+
+## 🔭 OpenTelemetry (OTLP) Integration
+
+A plataforma aceita traces no formato padrão **OpenTelemetry (OTLP HTTP/JSON)**, permitindo que qualquer aplicação que já use OTEL SDK envie dados sem adapters ou agentes extras.
+
+### Endpoint
+
+```
+POST http://<host>/v1/traces
+Content-Type: application/json
+Authorization: Bearer <sua-api-key>
+```
+
+### Configurando sua aplicação (qualquer linguagem)
+
+Basta apontar o seu OTEL SDK para o endpoint acima:
+
+**Variáveis de ambiente (recomendado):**
+```bash
+OTEL_EXPORTER_OTLP_ENDPOINT=http://<host>
+OTEL_EXPORTER_OTLP_HEADERS="Authorization=Bearer <api-key>"
+OTEL_SERVICE_NAME=meu-servico
+```
+
+**Go (usando nosso shared-otel helper):**
+```go
+import sharedotel "shared-otel"
+
+shutdown, err := sharedotel.Init(ctx, "meu-servico")
+defer shutdown()
+```
+
+**Node.js:**
+```bash
+npm install @opentelemetry/sdk-node @opentelemetry/exporter-trace-otlp-http
+```
+```js
+const { OTLPTraceExporter } = require('@opentelemetry/exporter-trace-otlp-http')
+const exporter = new OTLPTraceExporter({
+  url: 'http://<host>/v1/traces',
+  headers: { Authorization: 'Bearer <api-key>' }
+})
+```
+
+**Python:**
+```bash
+pip install opentelemetry-exporter-otlp-proto-http
+```
+```python
+from opentelemetry.exporter.otlp.proto.http.trace_exporter import OTLPSpanExporter
+exporter = OTLPSpanExporter(
+    endpoint="http://<host>/v1/traces",
+    headers={"Authorization": "Bearer <api-key>"}
+)
+```
+
+**Delphi / Pascal (REST Client):**
+Como o Delphi pode ser usado em sistemas ERP legados/desktop e pode não possuir um SDK oficial OTEL ativo, basta montar o payload JSON e enviar um POST. Exemplo usando `TRESTClient`:
+```pascal
+uses
+  REST.Client, REST.Types;
+
+var
+  Client: TRESTClient;
+  Request: TRESTRequest;
+  PayloadOTLP: string;
+begin
+  Client := TRESTClient.Create('http://<host>/v1/traces');
+  Request := TRESTRequest.Create(nil);
+  try
+    Request.Client := Client;
+    Request.Method := rmPOST;
+    
+    // Autenticação usando a sua API Key
+    Request.CustomHeaders.AddValue('Authorization', 'Bearer <api-key>');
+    
+    // Construa o JSON de acordo com a spec OTLP
+    PayloadOTLP := '{ "resourceSpans": [ ... ] }';
+    Request.AddBody(PayloadOTLP, ctAPPLICATION_JSON);
+    
+    Request.Execute;
+  finally
+    Request.Free;
+    Client.Free;
+  end;
+end;
+```
 
 ---
 

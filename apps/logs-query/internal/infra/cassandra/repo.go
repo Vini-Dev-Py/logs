@@ -57,3 +57,21 @@ func (r Repo) TraceGraph(traceID string) (map[string]any, error) {
 	}
 	return map[string]any{"nodes": nodes, "edges": edges}, iter.Close()
 }
+
+type EndpointSummary struct {
+	ServiceName string `json:"serviceName"`
+	HTTPMethod  string `json:"httpMethod"`
+	HTTPPath    string `json:"httpPath"`
+	Calls       int    `json:"calls"`
+}
+
+func (r Repo) ListEndpoints(companyID string, day string) ([]EndpointSummary, error) {
+	iter := r.Session.Query("SELECT service_name, http_method, http_path, calls FROM endpoint_calls_by_company_day WHERE company_id=? AND day=?", companyID, day).Iter()
+	out := []EndpointSummary{}
+	var s EndpointSummary
+	for iter.Scan(&s.ServiceName, &s.HTTPMethod, &s.HTTPPath, &s.Calls) {
+		out = append(out, s)
+	}
+	// Note: We might sort out locally descending by calls to easily return the top.
+	return out, iter.Close()
+}

@@ -22,3 +22,8 @@ Para testá-lo em isolamento, os logs nos containers bastam:
 docker compose logs -f logs-worker
 \`\`\`
 _(É esperado observar logs informando qual node/id e trace/id foram sincronizados nas DBs e a volumetria processada)._
+
+### 📊 Por que instrumentar o worker com métricas na Etapa 2?
+
+A plataforma `Logs` atua como um Datadog/Grafana. O objetivo dela é receber logs e métricas de aplicações **externas** (ex: APIs e microsserviços externos).
+Apenas para facilitar os testes locais da **Etapa 2 (Correlação de Traces com CPU/RAM)**, nós instrumentamos o exportador de métricas deste próprio `logs-worker` servindo `/metrics` e usamos ele no `seed` simulando que ele é uma "Aplicação Externa Conectada". Assim o usuário pode analisar um gráfico vivo na Dashboard sem precisar rodar uma app externa de imediato.

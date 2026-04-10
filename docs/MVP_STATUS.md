@@ -2,6 +2,28 @@
 
 Implementação evoluída para um baseline mais próximo do `logs_mvp_implementation_plan.md`:
 
+## Últimas Atualizações (Abril 2026)
+
+### ✅ Correções de Infraestrutura
+
+- **Volumes persistentes adicionados**: PostgreSQL e Cassandra agora mantêm dados após `make down`
+  - `postgres_data` e `cassandra_data` volumes nomeados criados
+- **Makefile atualizado**:
+  - `make down`: Remove volumes (comportamento antigo, agora com warning)
+  - `make down-keep-data`: Mantém dados nos volumes (recomendado para dev)
+- **Order de inicialização corrigida**: Cassandra migration deve rodar ANTES dos services
+
+### 🐛 Bugs Resolvidos
+
+1. **logs-query e logs-worker crashando**: Keyspace `logs` não existia no Cassandra
+   - Solução: Rodar `make migrate-cassandra` antes de subir os services
+2. **Seed retornando 500**: logs-query não estava rodando
+   - Solução: Garantir que Cassandra migration roda primeiro
+3. **Dados perdidos no `make down`**: Volumes não eram persistentes
+   - Solução: Adicionados volumes nomeados no docker-compose.yml
+
+---
+
 ## Estrutura e arquitetura
 
 - Monorepo com serviços separados em `apps/`.

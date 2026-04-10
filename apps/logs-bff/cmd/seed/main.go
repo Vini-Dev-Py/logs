@@ -26,7 +26,16 @@ func main() {
 	apiKey := "logs_dev_api_key"
 	hash, _ := bcrypt.GenerateFromPassword([]byte("admin123"), bcrypt.DefaultCost)
 	_, _ = db.Exec(context.Background(), "INSERT INTO companies(id,name,api_key) VALUES($1,$2,$3) ON CONFLICT (api_key) DO NOTHING", companyID, "Logs Demo", apiKey)
-	_, _ = db.Exec(context.Background(), "INSERT INTO users(id,company_id,name,email,password_hash,role) VALUES($1,(SELECT id FROM companies WHERE api_key=$2),$3,$4,$5,$6) ON CONFLICT (email) DO NOTHING", userID, apiKey, "Admin", "admin@logs.local", string(hash), "ADMIN")
+	
+	// Pre-create Default Role
+	roleID := uuid.NewString()
+	_, _ = db.Exec(context.Background(), "INSERT INTO roles(id,company_id,name,description,is_system_default) VALUES($1,(SELECT id FROM companies WHERE api_key=$2),$3,$4,$5) ON CONFLICT DO NOTHING", roleID, apiKey, "Administrador", "Acesso total a todas as funções", true)
+	_, _ = db.Exec(context.Background(), "INSERT INTO role_permissions(role_id,permission_name) VALUES($1,$2) ON CONFLICT DO NOTHING", roleID, "traces:read")
+	_, _ = db.Exec(context.Background(), "INSERT INTO role_permissions(role_id,permission_name) VALUES($1,$2) ON CONFLICT DO NOTHING", roleID, "annotations:write")
+	_, _ = db.Exec(context.Background(), "INSERT INTO role_permissions(role_id,permission_name) VALUES($1,$2) ON CONFLICT DO NOTHING", roleID, "users:manage")
+	
+	// Create user attached to new role (ignoring old text role)
+	_, _ = db.Exec(context.Background(), "INSERT INTO users(id,company_id,name,email,password_hash,role,role_id) VALUES($1,(SELECT id FROM companies WHERE api_key=$2),$3,$4,$5,$6,$7) ON CONFLICT (email) DO NOTHING", userID, apiKey, "Admin", "admin@logs.local", string(hash), "ADMIN", roleID)
 
 	// Create cassandra connection
 	cluster := gocql.NewCluster("localhost")
