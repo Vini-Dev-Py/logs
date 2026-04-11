@@ -16,6 +16,15 @@ import (
 type Client interface {
 	Index(ctx context.Context, indexName string, docID string, body interface{}) error
 	Search(ctx context.Context, indexName string, query string, companyID string) ([]SearchResult, error)
+	SearchPaginated(ctx context.Context, indexName string, query string, companyID string, page, pageSize int) (PaginatedSearchResult, error)
+}
+
+type PaginatedSearchResult struct {
+	Items      []SearchResult `json:"items"`
+	Total      int            `json:"total"`
+	Page       int            `json:"page"`
+	PageSize   int            `json:"pageSize"`
+	TotalPages int            `json:"totalPages"`
 }
 
 type SearchResult struct {
@@ -132,4 +141,91 @@ func (c *clientImpl) Search(ctx context.Context, indexName string, query string,
 	}
 
 	return results, nil
+}
+
+func (c *clientImpl) SearchPaginated(ctx context.Context, indexName string, query string, companyID string, page, pageSize int) (PaginatedSearchResult, error) {
+	if page < 1 {
+		page = 1
+	}
+	if pageSize < 1 || pageSize > 200 {
+		pageSize = 50
+	}
+
+	from := (page - 1) * pageSize
+
+	q := fmt.Sprintf(`{
+		"query": {
+			"bool": {
+				"must": [
+					{
+						"multi_match": {
+							"query": "%s",
+							"fields": ["*"]
+						}
+					}
+				],
+				"filter": [
+					{
+						"term": {
+							"companyId.keyword": "%s"
+						}
+					}
+				]
+			}
+		},
+		"from": %d,
+		"size": %d,
+		"track_total_hits": true,
+		"_source": ["traceId", "nodeId", "name", "type", "dbQuery", "metadata", "serviceName"]
+	}`, query, companyID, from, pageSize)
+
+	req := opensearchapi.SearchRequest{
+		Index: []string{indexName},
+		Body:  strings.NewReader(q),
+	}
+
+	res, err := req.Do(ctx, c.osClient)
+	if err != nil {
+		return PaginatedSearchResult{}, fmt.Errorf("failed to search: %w", err)
+	}
+	defer res.Body.Close()
+
+	if res.IsError() {
+		b, _ := io.ReadAll(res.Body)
+		return PaginatedSearchResult{}, fmt.Errorf("search error [%s]: %s", res.Status(), string(b))
+	}
+
+	var r struct {
+		Hits struct {
+			Total struct {
+				Value int `json:"value"`
+			} `json:"total"`
+			Hits []struct {
+				Source SearchResult `json:"_source"`
+			} `json:"hits"`
+		} `json:"hits"`
+	}
+
+	if err := json.NewDecoder(res.Body).Decode(&r); err != nil {
+		return PaginatedSearchResult{}, fmt.Errorf("failed to decode search response: %w", err)
+	}
+
+	var results []SearchResult
+	for _, hit := range r.Hits.Hits {
+		results = append(results, hit.Source)
+	}
+
+	total := r.Hits.Total.Value
+	totalPages := (total + pageSize - 1) / pageSize
+	if totalPages == 0 {
+		totalPages = 1
+	}
+
+	return PaginatedSearchResult{
+		Items:      results,
+		Total:      total,
+		Page:       page,
+		PageSize:   pageSize,
+		TotalPages: totalPages,
+	}, nil
 }

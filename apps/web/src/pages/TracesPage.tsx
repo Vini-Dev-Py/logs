@@ -5,6 +5,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { Link } from "react-router-dom";
 import { api } from "../api/client";
+import { Pagination } from "../components/Pagination";
 
 const rowVariants = {
   hidden: { opacity: 0, y: 8 },
@@ -15,11 +16,24 @@ const rowVariants = {
   }),
 };
 
+const PAGE_SIZE_KEY = "traces_page_size";
+
+function getInitialPageSize(): number {
+  try {
+    const saved = localStorage.getItem(PAGE_SIZE_KEY);
+    return saved ? parseInt(saved, 10) : 50;
+  } catch {
+    return 50;
+  }
+}
+
 export function TracesPage() {
   const { t } = useTranslation();
   const [status, setStatus] = useState("");
   const [service, setService] = useState("");
   const [searchQuery, setSearchQuery] = useState("");
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(getInitialPageSize);
   const queryClient = useQueryClient();
   const isMountedRef = useRef(true);
 
@@ -28,11 +42,26 @@ export function TracesPage() {
     isMountedRef.current = true;
     return () => {
       isMountedRef.current = false;
-      // Cancel ongoing queries when component unmounts
-      queryClient.cancelQueries({ queryKey: ["traces", status, service] });
-      queryClient.cancelQueries({ queryKey: ["search", searchQuery] });
+      queryClient.cancelQueries({
+        queryKey: ["traces", status, service, page, pageSize],
+      });
+      queryClient.cancelQueries({
+        queryKey: ["search", searchQuery, page, pageSize],
+      });
     };
-  }, [status, service, searchQuery, queryClient]);
+  }, [status, service, searchQuery, page, pageSize, queryClient]);
+
+  // Reset page when filters change
+  useEffect(() => {
+    setPage(1);
+  }, [status, service, searchQuery]);
+
+  // Save page size to localStorage
+  useEffect(() => {
+    try {
+      localStorage.setItem(PAGE_SIZE_KEY, pageSize.toString());
+    } catch {}
+  }, [pageSize]);
 
   const timeRange = useMemo(() => {
     const now = new Date();
@@ -43,29 +72,43 @@ export function TracesPage() {
   }, []);
 
   const q = useQuery({
-    queryKey: ["traces", status, service],
+    queryKey: ["traces", status, service, page, pageSize],
     queryFn: async () => {
       const params = new URLSearchParams({
         from: timeRange.from,
         to: timeRange.to,
         status,
         service,
+        page: page.toString(),
+        pageSize: pageSize.toString(),
       });
-      return (await api.get(`/traces?${params.toString()}`)).data.items || [];
+      return (await api.get(`/traces?${params.toString()}`)).data;
     },
   });
 
   const searchQ = useQuery({
-    queryKey: ["search", searchQuery],
+    queryKey: ["search", searchQuery, page, pageSize],
     queryFn: async () => {
       if (!searchQuery) return null;
-      const params = new URLSearchParams({ query: searchQuery });
-      return (await api.get(`/search?${params.toString()}`)).data.items || [];
+      const params = new URLSearchParams({
+        query: searchQuery,
+        page: page.toString(),
+        pageSize: pageSize.toString(),
+      });
+      return (await api.get(`/search?${params.toString()}`)).data;
     },
     enabled: searchQuery.length > 2,
   });
 
   const isSearching = searchQuery.length > 2;
+  const tracesData = isSearching ? searchQ.data : q.data;
+  const items = tracesData?.items || [];
+  const total = tracesData?.total || 0;
+
+  const handlePageSizeChange = (newPageSize: number) => {
+    setPageSize(newPageSize);
+    setPage(1);
+  };
 
   return (
     <section className="space-y-4">
@@ -136,7 +179,7 @@ export function TracesPage() {
           </thead>
           <tbody>
             {!isSearching
-              ? q.data?.map((tr: any, i: number) => (
+              ? items.map((tr: any, i: number) => (
                   <motion.tr
                     key={tr.traceId}
                     custom={i}
@@ -180,7 +223,7 @@ export function TracesPage() {
                     </td>
                   </motion.tr>
                 ))
-              : searchQ.data?.map((hit: any, i: number) => (
+              : items.map((hit: any, i: number) => (
                   <motion.tr
                     key={`${hit.traceId}-${i}`}
                     custom={i}
@@ -226,8 +269,8 @@ export function TracesPage() {
               </tr>
             )}
 
-            {((!isSearching && !q.isLoading && !q.data?.length) ||
-              (isSearching && !searchQ.isLoading && !searchQ.data?.length)) && (
+            {((!isSearching && !q.isLoading && !items.length) ||
+              (isSearching && !searchQ.isLoading && !items.length)) && (
               <tr>
                 <td
                   colSpan={5}
@@ -240,6 +283,17 @@ export function TracesPage() {
           </tbody>
         </table>
       </div>
+
+      {/* Pagination */}
+      {total > 0 && (
+        <Pagination
+          page={page}
+          pageSize={pageSize}
+          total={total}
+          onPageChange={setPage}
+          onPageSizeChange={handlePageSizeChange}
+        />
+      )}
     </section>
   );
 }

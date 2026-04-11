@@ -113,7 +113,13 @@ func (s *Server) me(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) traces(w http.ResponseWriter, r *http.Request) {
 	cid := r.Context().Value("companyId").(string)
-	resp, err := http.Get(fmt.Sprintf("%s/query/v1/traces?companyId=%s&from=%s&to=%s&status=%s&service=%s", s.cfg.QueryURL, cid, r.URL.Query().Get("from"), r.URL.Query().Get("to"), r.URL.Query().Get("status"), r.URL.Query().Get("service")))
+	
+	// Build query params including pagination
+	q := r.URL.Query()
+	q.Set("companyId", cid)
+	
+	url := fmt.Sprintf("%s/query/v1/traces?%s", s.cfg.QueryURL, q.Encode())
+	resp, err := http.Get(url)
 	if err != nil {
 		http.Error(w, err.Error(), 500)
 		return
@@ -187,7 +193,11 @@ func (s *Server) searchNodes(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	url := fmt.Sprintf("%s/query/v1/search?companyId=%s&query=%s", s.cfg.QueryURL, cid, query)
+	// Build query params including pagination
+	q := r.URL.Query()
+	q.Set("companyId", cid)
+	
+	url := fmt.Sprintf("%s/query/v1/search?%s", s.cfg.QueryURL, q.Encode())
 	req, err := http.NewRequestWithContext(r.Context(), http.MethodGet, url, nil)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
