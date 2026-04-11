@@ -136,11 +136,13 @@ services:
       # Native ingest route
       - traefik.http.routers.logs-ingest.rule=PathPrefix(`/ingest`)
       - traefik.http.routers.logs-ingest.entrypoints=web
-      - traefik.http.services.logs-ingest.loadbalancer.server.port=8082
+      - traefik.http.routers.logs-ingest.service=logs-ingest-svc
+      - traefik.http.services.logs-ingest-svc.loadbalancer.server.port=8082
       # OTLP receiver route (standard OpenTelemetry endpoint)
-      - "traefik.http.routers.logs-otlp.rule=PathPrefix(`/v1/traces`)"
+      - traefik.http.routers.logs-otlp.rule=PathPrefix(`/v1/traces`)
       - traefik.http.routers.logs-otlp.entrypoints=web
-      - traefik.http.services.logs-otlp.loadbalancer.server.port=8082
+      - traefik.http.routers.logs-otlp.service=logs-otlp-svc
+      - traefik.http.services.logs-otlp-svc.loadbalancer.server.port=8082
 
   logs-worker:
     build:
@@ -149,6 +151,7 @@ services:
     environment:
       RABBITMQ_URL: amqp://guest:guest@rabbitmq:5672/
       CASSANDRA_HOSTS: cassandra
+      OPENSEARCH_HOSTS: http://opensearch:9200
     depends_on:
       rabbitmq:
         condition: service_healthy
@@ -182,6 +185,31 @@ services:
       - traefik.http.routers.web.rule=PathPrefix(`/`)
       - traefik.http.routers.web.entrypoints=web
       - traefik.http.services.web.loadbalancer.server.port=5173
+
+  logs-simulator:
+    build:
+      context: .
+      dockerfile: ./apps/logs-simulator/Dockerfile
+    environment:
+      TARGET_URL: http://logs-ingest:8082/ingest/v1/log-events
+      OTLP_URL: http://logs-ingest:8082/v1/traces
+      API_KEY: logs_dev_api_key
+      MODE: native
+      WORKERS: "10"
+      BURST_SIZE: "50"
+      BURSTS: "20"
+      BURST_DELAY: "2s"
+      SEARCH_URL: http://logs-bff:8081/api/search
+      SEARCH_QUERY: SELECT
+      COMPANY_ID: c152767f-4e9b-4311-b896-a7a37c9ccbfe
+    depends_on:
+      logs-ingest:
+        condition: service_started
+      logs-bff:
+        condition: service_started
+    profiles:
+      - simulation
+    restart: "no"
 
 volumes:
   postgres_data:

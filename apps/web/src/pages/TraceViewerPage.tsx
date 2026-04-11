@@ -1,5 +1,5 @@
-import { useQuery } from "@tanstack/react-query";
-import { useMemo, useState } from "react";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useEffect, useMemo, useRef, useState } from "react";
 import ReactFlow from "react-flow-renderer";
 import { useParams } from "react-router-dom";
 import { api } from "../api/client";
@@ -8,6 +8,9 @@ export function TraceViewerPage() {
   const { traceId = "" } = useParams();
   const [note, setNote] = useState("");
   const [searchQuery, setSearchQuery] = useState("");
+  const queryClient = useQueryClient();
+  const isMountedRef = useRef(true);
+
   const q = useQuery({
     queryKey: ["trace", traceId],
     queryFn: async () => (await api.get(`/traces/${traceId}`)).data,
@@ -22,6 +25,17 @@ export function TraceViewerPage() {
     },
     enabled: searchQuery.length > 2,
   });
+
+  // Cleanup on unmount to prevent memory leaks
+  useEffect(() => {
+    isMountedRef.current = true;
+    return () => {
+      isMountedRef.current = false;
+      // Cancel ongoing queries when component unmounts
+      queryClient.cancelQueries({ queryKey: ["trace", traceId] });
+      queryClient.cancelQueries({ queryKey: ["search", searchQuery] });
+    };
+  }, [traceId, searchQuery, queryClient]);
 
   const nodes = useMemo(() => {
     const matchedNodeIds = new Set(
@@ -58,7 +72,7 @@ export function TraceViewerPage() {
       }
 
       return {
-        id: n.id,
+        id: `node-${n.id}-${i}`,
         data: { label: `${n.data.label} • ${n.data.type}` },
         position: { x: (i % 4) * 260, y: Math.floor(i / 4) * 120 },
         style: {
@@ -85,15 +99,24 @@ export function TraceViewerPage() {
   }, [q.data, searchQ.data, searchQuery]);
 
   async function addAnnotation() {
-    if (!note.trim()) return;
-    await api.post(`/traces/${traceId}/annotations`, {
-      nodeId: "annotation",
-      text: note,
-      x: 80,
-      y: 80,
-    });
-    setNote("");
-    q.refetch();
+    if (!note.trim() || !isMountedRef.current) return;
+    try {
+      await api.post(`/traces/${traceId}/annotations`, {
+        nodeId: "annotation",
+        text: note,
+        x: 80,
+        y: 80,
+      });
+      setNote("");
+      // Only refetch if component is still mounted
+      if (isMountedRef.current) {
+        q.refetch();
+      }
+    } catch (error) {
+      // Ignore error if component is unmounted
+      if (!isMountedRef.current) return;
+      throw error;
+    }
   }
 
   return (
