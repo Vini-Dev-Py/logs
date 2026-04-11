@@ -37,7 +37,7 @@ export function TraceViewerPage() {
     };
   }, [traceId, searchQuery, queryClient]);
 
-  const nodes = useMemo(() => {
+  const { nodes, edges } = useMemo(() => {
     const matchedNodeIds = new Set(
       (searchQ.data || [])
         .filter((r: any) => r.traceId === traceId)
@@ -45,7 +45,8 @@ export function TraceViewerPage() {
     );
     const isSearching = searchQuery.length > 2;
 
-    const base = (q.data?.nodes || []).map((n: any, i: number) => {
+    // Build nodes with unique IDs
+    const baseNodes = (q.data?.nodes || []).map((n: any, i: number) => {
       let isMatch = false;
       if (isSearching) {
         if (matchedNodeIds.has(n.id)) {
@@ -73,6 +74,7 @@ export function TraceViewerPage() {
 
       return {
         id: `node-${n.id}-${i}`,
+        originalId: n.id,
         data: { label: `${n.data.label} • ${n.data.type}` },
         position: { x: (i % 4) * 260, y: Math.floor(i / 4) * 120 },
         style: {
@@ -85,7 +87,8 @@ export function TraceViewerPage() {
         },
       };
     });
-    const anns = (q.data?.annotations || []).map((a: any) => ({
+
+    const annotationNodes = (q.data?.annotations || []).map((a: any) => ({
       id: `ann-${a.id}`,
       data: { label: `📝 ${a.text}` },
       position: { x: a.x, y: a.y },
@@ -95,7 +98,32 @@ export function TraceViewerPage() {
         borderRadius: 10,
       },
     }));
-    return [...base, ...anns];
+
+    // Build edges mapping original IDs to new IDs
+    const nodeIdMap = new Map<string, string>();
+    baseNodes.forEach((n: any) => {
+      nodeIdMap.set(n.originalId, n.id);
+    });
+
+    const edges = (q.data?.edges || [])
+      .map((e: any) => {
+        const sourceId = nodeIdMap.get(e.source);
+        const targetId = nodeIdMap.get(e.target);
+        if (sourceId && targetId) {
+          return {
+            id: `edge-${sourceId}-${targetId}`,
+            source: sourceId,
+            target: targetId,
+            type: "smoothstep",
+            style: { stroke: "#6366f1", strokeWidth: 2 },
+            animated: false,
+          };
+        }
+        return null;
+      })
+      .filter(Boolean);
+
+    return { nodes: [...baseNodes, ...annotationNodes], edges };
   }, [q.data, searchQ.data, searchQuery]);
 
   async function addAnnotation() {
@@ -152,7 +180,7 @@ export function TraceViewerPage() {
         </div>
       </header>
       <div className="h-[78vh] bg-white border border-slate-200 rounded-xl overflow-hidden">
-        <ReactFlow nodes={nodes} edges={q.data?.edges || []} fitView />
+        <ReactFlow nodes={nodes} edges={edges} fitView />
       </div>
     </section>
   );
