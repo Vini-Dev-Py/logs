@@ -29,11 +29,18 @@ func (s *Server) Handler() http.Handler {
 	r.Group(func(pr chi.Router) {
 		pr.Use(s.auth)
 		pr.Get("/api/me", s.me)
-		pr.Get("/api/traces", s.traces)
-		pr.Get("/api/traces/{traceId}", s.traceByID)
-		pr.Post("/api/traces/{traceId}/annotations", s.createAnnotation)
-		pr.Put("/api/annotations/{id}", s.updateAnnotation)
-		pr.Delete("/api/annotations/{id}", s.deleteAnnotation)
+		pr.With(requirePerm("traces:read")).Get("/api/traces", s.traces)
+		pr.With(requirePerm("traces:read")).Get("/api/traces/{traceId}", s.traceByID)
+		pr.With(requirePerm("traces:read")).Get("/api/search", s.searchNodes)
+		pr.With(requirePerm("traces:read")).Get("/api/metrics/endpoints", s.endpoints)
+		pr.With(requirePerm("annotations:write")).Post("/api/traces/{traceId}/annotations", s.createAnnotation)
+		pr.With(requirePerm("annotations:write")).Put("/api/annotations/{id}", s.updateAnnotation)
+		pr.With(requirePerm("annotations:write")).Delete("/api/annotations/{id}", s.deleteAnnotation)
+		
+		// Users Admin routes
+		pr.With(requirePerm("users:manage")).Get("/api/users", s.listUsers)
+		pr.With(requirePerm("users:manage")).Get("/api/roles", s.listRoles)
+		pr.With(requirePerm("users:manage")).Put("/api/users/{id}/role", s.updateUserRole)
 	})
 	return r
 }
@@ -50,9 +57,9 @@ func (s *Server) login(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "invalid credentials", 401)
 		return
 	}
-	t := jwt.NewWithClaims(jwt.SigningMethodHS256, jwt.MapClaims{"sub": u.ID, "companyId": u.CompanyID, "email": u.Email, "exp": time.Now().Add(24 * time.Hour).Unix()})
+	t := jwt.NewWithClaims(jwt.SigningMethodHS256, jwt.MapClaims{"sub": u.ID, "companyId": u.CompanyID, "email": u.Email, "permissions": u.Permissions, "exp": time.Now().Add(24 * time.Hour).Unix()})
 	token, _ := t.SignedString([]byte(s.cfg.JWTSecret))
-	_ = json.NewEncoder(w).Encode(map[string]any{"token": token, "user": map[string]any{"id": u.ID, "companyId": u.CompanyID, "name": u.Name, "email": u.Email, "role": u.Role}})
+	_ = json.NewEncoder(w).Encode(map[string]any{"token": token, "user": map[string]any{"id": u.ID, "companyId": u.CompanyID, "name": u.Name, "email": u.Email, "role": u.Role, "permissions": u.Permissions}})
 }
 
 func (s *Server) auth(next http.Handler) http.Handler {
@@ -66,8 +73,33 @@ func (s *Server) auth(next http.Handler) http.Handler {
 		claims := tok.Claims.(jwt.MapClaims)
 		ctx := context.WithValue(r.Context(), "companyId", claims["companyId"].(string))
 		ctx = context.WithValue(ctx, "userId", claims["sub"].(string))
+		
+		var perms []string
+		if pClaim, ok := claims["permissions"].([]interface{}); ok {
+			for _, p := range pClaim {
+				if s, ok := p.(string); ok {
+					perms = append(perms, s)
+				}
+			}
+		}
+		ctx = context.WithValue(ctx, "permissions", perms)
 		next.ServeHTTP(w, r.WithContext(ctx))
 	})
+}
+
+func requirePerm(perm string) func(http.Handler) http.Handler {
+	return func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			perms, _ := r.Context().Value("permissions").([]string)
+			for _, p := range perms {
+				if p == perm {
+					next.ServeHTTP(w, r)
+					return
+				}
+			}
+			http.Error(w, "forbidden by role", 403)
+		})
+	}
 }
 
 func (s *Server) me(w http.ResponseWriter, r *http.Request) {
@@ -81,7 +113,13 @@ func (s *Server) me(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) traces(w http.ResponseWriter, r *http.Request) {
 	cid := r.Context().Value("companyId").(string)
-	resp, err := http.Get(fmt.Sprintf("%s/query/v1/traces?companyId=%s&from=%s&to=%s&status=%s&service=%s", s.cfg.QueryURL, cid, r.URL.Query().Get("from"), r.URL.Query().Get("to"), r.URL.Query().Get("status"), r.URL.Query().Get("service")))
+	
+	// Build query params including pagination
+	q := r.URL.Query()
+	q.Set("companyId", cid)
+	
+	url := fmt.Sprintf("%s/query/v1/traces?%s", s.cfg.QueryURL, q.Encode())
+	resp, err := http.Get(url)
 	if err != nil {
 		http.Error(w, err.Error(), 500)
 		return
@@ -140,6 +178,94 @@ func (s *Server) updateAnnotation(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) deleteAnnotation(w http.ResponseWriter, r *http.Request) {
 	if err := s.repo.Delete(r.Context(), r.Context().Value("companyId").(string), chi.URLParam(r, "id")); err != nil {
+		http.Error(w, err.Error(), 500)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
+func (s *Server) searchNodes(w http.ResponseWriter, r *http.Request) {
+	cid := r.Context().Value("companyId").(string)
+	query := r.URL.Query().Get("query")
+
+	if query == "" {
+		http.Error(w, "query is required", http.StatusBadRequest)
+		return
+	}
+
+	// Build query params including pagination
+	q := r.URL.Query()
+	q.Set("companyId", cid)
+	
+	url := fmt.Sprintf("%s/query/v1/search?%s", s.cfg.QueryURL, q.Encode())
+	req, err := http.NewRequestWithContext(r.Context(), http.MethodGet, url, nil)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	defer resp.Body.Close()
+
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(resp.StatusCode)
+	_, _ = io.Copy(w, resp.Body)
+}
+
+func (s *Server) endpoints(w http.ResponseWriter, r *http.Request) {
+	cid := r.Context().Value("companyId").(string)
+	day := r.URL.Query().Get("day")
+	url := fmt.Sprintf("%s/query/v1/metrics/endpoints?companyId=%s", s.cfg.QueryURL, cid)
+	if day != "" {
+		url += fmt.Sprintf("&day=%s", day)
+	}
+
+	req, err := http.NewRequestWithContext(r.Context(), http.MethodGet, url, nil)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	defer resp.Body.Close()
+
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(resp.StatusCode)
+	_, _ = io.Copy(w, resp.Body)
+}
+
+func (s *Server) listUsers(w http.ResponseWriter, r *http.Request) {
+	users, err := s.repo.ListUsers(r.Context(), r.Context().Value("companyId").(string))
+	if err != nil {
+		http.Error(w, err.Error(), 500)
+		return
+	}
+	_ = json.NewEncoder(w).Encode(map[string]any{"items": users})
+}
+
+func (s *Server) listRoles(w http.ResponseWriter, r *http.Request) {
+	roles, err := s.repo.ListRoles(r.Context(), r.Context().Value("companyId").(string))
+	if err != nil {
+		http.Error(w, err.Error(), 500)
+		return
+	}
+	_ = json.NewEncoder(w).Encode(map[string]any{"items": roles})
+}
+
+func (s *Server) updateUserRole(w http.ResponseWriter, r *http.Request) {
+	var b struct {
+		RoleID string `json:"roleId"`
+	}
+	_ = json.NewDecoder(r.Body).Decode(&b)
+	if err := s.repo.UpdateUserRole(r.Context(), r.Context().Value("companyId").(string), chi.URLParam(r, "id"), b.RoleID); err != nil {
 		http.Error(w, err.Error(), 500)
 		return
 	}

@@ -52,3 +52,13 @@ CREATE TABLE IF NOT EXISTS logs.event_dedup (
   received_at timestamp,
   PRIMARY KEY ((company_id), event_id)
 ) WITH default_time_to_live = 604800;
+
+CREATE TABLE IF NOT EXISTS logs.endpoint_calls_by_company_day (
+  company_id text,
+  day text,
+  service_name text,
+  http_method text,
+  http_path text,
+  calls counter,
+  PRIMARY KEY ((company_id, day), service_name, http_method, http_path)
+);

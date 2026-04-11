@@ -1,60 +1,299 @@
-import { useMemo, useState } from 'react'
-import { useQuery } from '@tanstack/react-query'
-import { Link } from 'react-router-dom'
-import { api } from '../api/client'
+import { MagnifyingGlassIcon } from "@heroicons/react/24/outline";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { motion } from "framer-motion";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { useTranslation } from "react-i18next";
+import { Link } from "react-router-dom";
+import { api } from "../api/client";
+import { Pagination } from "../components/Pagination";
+
+const rowVariants = {
+  hidden: { opacity: 0, y: 8 },
+  visible: (i: number) => ({
+    opacity: 1,
+    y: 0,
+    transition: { delay: i * 0.04, duration: 0.2 },
+  }),
+};
+
+const PAGE_SIZE_KEY = "traces_page_size";
+
+function getInitialPageSize(): number {
+  try {
+    const saved = localStorage.getItem(PAGE_SIZE_KEY);
+    return saved ? parseInt(saved, 10) : 50;
+  } catch {
+    return 50;
+  }
+}
 
 export function TracesPage() {
-  const [status, setStatus] = useState('')
-  const [service, setService] = useState('')
+  const { t } = useTranslation();
+  const [status, setStatus] = useState("");
+  const [service, setService] = useState("");
+  const [searchQuery, setSearchQuery] = useState("");
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(getInitialPageSize);
+  const queryClient = useQueryClient();
+  const isMountedRef = useRef(true);
+
+  // Cleanup on unmount to prevent memory leaks
+  useEffect(() => {
+    isMountedRef.current = true;
+    return () => {
+      isMountedRef.current = false;
+      queryClient.cancelQueries({
+        queryKey: ["traces", status, service, page, pageSize],
+      });
+      queryClient.cancelQueries({
+        queryKey: ["search", searchQuery, page, pageSize],
+      });
+    };
+  }, [status, service, searchQuery, page, pageSize, queryClient]);
+
+  // Reset page when filters change
+  useEffect(() => {
+    setPage(1);
+  }, [status, service, searchQuery]);
+
+  // Save page size to localStorage
+  useEffect(() => {
+    try {
+      localStorage.setItem(PAGE_SIZE_KEY, pageSize.toString());
+    } catch {}
+  }, [pageSize]);
+
   const timeRange = useMemo(() => {
-    const now = new Date()
+    const now = new Date();
     return {
       from: new Date(now.getTime() - 24 * 3600 * 1000).toISOString(),
       to: now.toISOString(),
-    }
-  }, [])
+    };
+  }, []);
 
   const q = useQuery({
-    queryKey: ['traces', status, service],
+    queryKey: ["traces", status, service, page, pageSize],
     queryFn: async () => {
-      const params = new URLSearchParams({ from: timeRange.from, to: timeRange.to, status, service })
-      return (await api.get(`/traces?${params.toString()}`)).data.items || []
+      const params = new URLSearchParams({
+        from: timeRange.from,
+        to: timeRange.to,
+        status,
+        service,
+        page: page.toString(),
+        pageSize: pageSize.toString(),
+      });
+      return (await api.get(`/traces?${params.toString()}`)).data;
     },
-  })
+  });
+
+  const searchQ = useQuery({
+    queryKey: ["search", searchQuery, page, pageSize],
+    queryFn: async () => {
+      if (!searchQuery) return null;
+      const params = new URLSearchParams({
+        query: searchQuery,
+        page: page.toString(),
+        pageSize: pageSize.toString(),
+      });
+      return (await api.get(`/search?${params.toString()}`)).data;
+    },
+    enabled: searchQuery.length > 2,
+  });
+
+  const isSearching = searchQuery.length > 2;
+  const tracesData = isSearching ? searchQ.data : q.data;
+  const items = tracesData?.items || [];
+  const total = tracesData?.total || 0;
+
+  const handlePageSizeChange = (newPageSize: number) => {
+    setPageSize(newPageSize);
+    setPage(1);
+  };
 
   return (
     <section className="space-y-4">
       <header className="flex items-center justify-between">
-        <h2 className="text-2xl font-semibold">Traces</h2>
+        <h2 className="text-2xl font-semibold text-slate-900 dark:text-white">
+          {t("traces.title")}
+        </h2>
       </header>
-      <div className="bg-white border border-slate-200 rounded-xl p-4 flex gap-3">
-        <select className="border rounded-lg px-3 py-2" value={status} onChange={(e) => setStatus(e.target.value)}>
-          <option value="">Todos status</option>
+
+      {/* Filters */}
+      <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl p-4 flex flex-col md:flex-row gap-3">
+        <div className="flex-1 relative">
+          <MagnifyingGlassIcon className="w-5 h-5 absolute left-3 top-2.5 text-slate-400" />
+          <input
+            className="w-full pl-10 pr-4 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-900 dark:text-white rounded-lg text-sm focus:ring-2 focus:ring-indigo-500 outline-none transition"
+            placeholder={t("traces.search_placeholder")}
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+          />
+        </div>
+        <select
+          title={t("traces.filter_status")}
+          className="border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-slate-900 dark:text-white rounded-lg px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-indigo-500 transition"
+          value={status}
+          onChange={(e) => setStatus(e.target.value)}
+        >
+          <option value="">{t("traces.filter_status")}</option>
           <option value="OK">OK</option>
           <option value="ERROR">ERROR</option>
         </select>
-        <input className="border rounded-lg px-3 py-2" placeholder="Serviço" value={service} onChange={(e) => setService(e.target.value)} />
+        <input
+          className="border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-slate-900 dark:text-white rounded-lg px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-indigo-500 transition"
+          placeholder={t("traces.filter_service_placeholder")}
+          value={service}
+          onChange={(e) => setService(e.target.value)}
+        />
       </div>
-      <div className="bg-white border border-slate-200 rounded-xl overflow-hidden">
+
+      {/* Table */}
+      <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl overflow-hidden shadow-sm">
         <table className="w-full text-sm">
-          <thead className="bg-slate-50 text-slate-600">
+          <thead className="bg-slate-50 dark:bg-slate-800 text-slate-600 dark:text-slate-400">
             <tr>
-              <th className="text-left p-3">startedAt</th><th className="text-left p-3">method/path</th><th className="text-left p-3">status</th><th className="text-left p-3">duration</th><th className="text-left p-3">service</th>
+              <th className="text-left p-4 font-medium">
+                {t("traces.col_trace")}
+              </th>
+              {isSearching ? (
+                <th className="text-left p-4 font-medium">
+                  {t("traces.col_content")}
+                </th>
+              ) : (
+                <>
+                  <th className="text-left p-4 font-medium">
+                    {t("traces.col_datetime")}
+                  </th>
+                  <th className="text-left p-4 font-medium">
+                    {t("traces.col_endpoint")}
+                  </th>
+                  <th className="text-left p-4 font-medium">
+                    {t("traces.col_status_duration")}
+                  </th>
+                  <th className="text-left p-4 font-medium">
+                    {t("traces.col_service")}
+                  </th>
+                </>
+              )}
             </tr>
           </thead>
           <tbody>
-            {q.data?.map((t: any) => (
-              <tr key={t.traceId} className="border-t hover:bg-slate-50">
-                <td className="p-3">{new Date(t.startedAt).toLocaleString()}</td>
-                <td className="p-3"><Link className="text-indigo-600 hover:underline" to={`/traces/${t.traceId}`}>{t.httpMethod} {t.httpPath}</Link></td>
-                <td className="p-3"><span className={`px-2 py-1 rounded-full text-xs ${t.status === 'ERROR' ? 'bg-red-100 text-red-700' : 'bg-emerald-100 text-emerald-700'}`}>{t.status}</span></td>
-                <td className="p-3">{t.durationMs}ms</td>
-                <td className="p-3">{t.serviceName}</td>
+            {!isSearching
+              ? items.map((tr: any, i: number) => (
+                  <motion.tr
+                    key={tr.traceId}
+                    custom={i}
+                    initial="hidden"
+                    animate="visible"
+                    variants={rowVariants}
+                    className="border-t border-slate-100 dark:border-slate-800 hover:bg-slate-50/80 dark:hover:bg-slate-800/60 transition-colors"
+                  >
+                    <td className="p-4 font-mono text-xs text-slate-500 dark:text-slate-400">
+                      <Link
+                        className="text-indigo-600 dark:text-indigo-400 hover:underline"
+                        to={`/traces/${tr.traceId}`}
+                      >
+                        {tr.traceId.split("-")[0]}...
+                      </Link>
+                    </td>
+                    <td className="p-4 text-slate-600 dark:text-slate-400">
+                      {new Date(tr.startedAt).toLocaleString()}
+                    </td>
+                    <td className="p-4 font-medium text-slate-800 dark:text-slate-200">
+                      {tr.httpMethod} {tr.httpPath}
+                    </td>
+                    <td className="p-4">
+                      <div className="flex items-center gap-3">
+                        <span
+                          className={`px-2.5 py-1 rounded-full text-xs font-semibold ${
+                            tr.status === "ERROR"
+                              ? "bg-red-100 text-red-700 dark:bg-red-900/40 dark:text-red-400"
+                              : "bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-400"
+                          }`}
+                        >
+                          {tr.status}
+                        </span>
+                        <span className="text-slate-500 dark:text-slate-400">
+                          {tr.durationMs}ms
+                        </span>
+                      </div>
+                    </td>
+                    <td className="p-4 text-slate-600 dark:text-slate-400 font-medium">
+                      {tr.serviceName}
+                    </td>
+                  </motion.tr>
+                ))
+              : items.map((hit: any, i: number) => (
+                  <motion.tr
+                    key={`${hit.traceId}-${i}`}
+                    custom={i}
+                    initial="hidden"
+                    animate="visible"
+                    variants={rowVariants}
+                    className="border-t border-slate-100 dark:border-slate-800 hover:bg-slate-50/80 dark:hover:bg-slate-800/60 transition-colors"
+                  >
+                    <td className="p-4">
+                      <div className="flex flex-col gap-1">
+                        <Link
+                          className="font-mono text-xs text-indigo-600 dark:text-indigo-400 hover:underline"
+                          to={`/traces/${hit.traceId}`}
+                        >
+                          Trace: {hit.traceId.split("-")[0]}
+                        </Link>
+                        <span className="text-xs text-slate-500 dark:text-slate-400">
+                          Nó: {hit.name} ({hit.type})
+                        </span>
+                      </div>
+                    </td>
+                    <td className="p-4 text-slate-700 dark:text-slate-300">
+                      {hit.dbQuery && (
+                        <code className="block bg-slate-100 dark:bg-slate-800 p-2 rounded text-xs text-slate-600 dark:text-slate-400 font-mono whitespace-pre-wrap">
+                          {hit.dbQuery}
+                        </code>
+                      )}
+                      {hit.metadata && (
+                        <span className="text-xs text-slate-500 font-mono truncate max-w-96 block">
+                          {hit.metadata}
+                        </span>
+                      )}
+                    </td>
+                  </motion.tr>
+                ))}
+
+            {((!isSearching && q.isLoading) ||
+              (isSearching && searchQ.isLoading)) && (
+              <tr>
+                <td colSpan={5} className="p-8 text-center text-slate-400">
+                  {t("traces.loading")}
+                </td>
               </tr>
-            ))}
+            )}
+
+            {((!isSearching && !q.isLoading && !items.length) ||
+              (isSearching && !searchQ.isLoading && !items.length)) && (
+              <tr>
+                <td
+                  colSpan={5}
+                  className="p-8 text-center text-slate-500 dark:text-slate-400"
+                >
+                  {t("traces.empty")}
+                </td>
+              </tr>
+            )}
           </tbody>
         </table>
       </div>
+
+      {/* Pagination */}
+      {total > 0 && (
+        <Pagination
+          page={page}
+          pageSize={pageSize}
+          total={total}
+          onPageChange={setPage}
+          onPageSizeChange={handlePageSizeChange}
+        />
+      )}
     </section>
-  )
+  );
 }

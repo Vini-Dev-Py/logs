@@ -1,0 +1,55 @@
+{
+  "nav": {
+    "dashboard": "Dashboard",
+    "traces": "Traces",
+    "settings": "Settings"
+  },
+  "login": {
+    "title": "Logs",
+    "subtitle": "Visual Log Tracing Platform",
+    "email": "Email",
+    "password": "Password",
+    "submit": "Sign in",
+    "submitting": "Signing in...",
+    "error": "Invalid credentials"
+  },
+  "traces": {
+    "title": "Traces",
+    "search_placeholder": "Full-text search across logs, SQL queries or metadata... (e.g. null_pointer)",
+    "filter_status": "All statuses",
+    "filter_service_placeholder": "Exact service name",
+    "col_trace": "Trace ID / Node",
+    "col_content": "Content (OpenSearch Match)",
+    "col_datetime": "Date/Time",
+    "col_endpoint": "Endpoint",
+    "col_status_duration": "Status / Duration",
+    "col_service": "Service",
+    "empty": "No results found.",
+    "loading": "Loading traces..."
+  },
+  "dashboard": {
+    "title": "Dashboard",
+    "subtitle": "Analytical metrics for your system",
+    "top_endpoints": "Top 10 most accessed paths today",
+    "col_service": "Service",
+    "col_endpoint": "Endpoint",
+    "col_calls": "Calls",
+    "loading": "Loading metrics...",
+    "empty": "No traffic processed today."
+  },
+  "settings": {
+    "title": "Users & Access",
+    "subtitle": "Control who has access and configure their roles.",
+    "col_user": "User",
+    "col_role": "Role",
+    "no_role": "No role",
+    "loading": "Loading users...",
+    "access_denied": "Access denied: you do not have permission to manage users."
+  },
+  "common": {
+    "error": "OK",
+    "status_error": "ERROR",
+    "theme_toggle_light": "Switch to light theme",
+    "theme_toggle_dark": "Switch to dark theme"
+  }
+}

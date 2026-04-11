@@ -7,6 +7,7 @@ import (
 	"logs-worker/internal/config"
 	"logs-worker/internal/infra/cassandra"
 	"logs-worker/internal/infra/rabbit"
+	search "shared-search"
 
 	"github.com/gocql/gocql"
 )
@@ -33,7 +34,18 @@ func main() {
 		log.Fatalf("failed to connect to cassandra after retries: %v", err)
 	}
 	defer session.Close()
-	if err := rabbit.Consume(cfg.RabbitMQURL, cassandra.Repo{Session: session}); err != nil {
+
+	searchClient, err := search.NewClient(cfg.OpenSearchHosts)
+	if err != nil {
+		log.Printf("failed to connect to opensearch: %v", err)
+	}
+
+	repo := cassandra.Repo{
+		Session: session,
+		Search:  searchClient,
+	}
+
+	if err := rabbit.Consume(cfg.RabbitMQURL, repo); err != nil {
 		log.Fatal(err)
 	}
 }

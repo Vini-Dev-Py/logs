@@ -2,22 +2,31 @@ package httpx
 
 import (
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"time"
 
 	"logs-query/internal/infra/cassandra"
+	search "shared-search"
 
 	"github.com/go-chi/chi/v5"
 )
 
-type Server struct{ repo cassandra.Repo }
+type Server struct {
+	repo   cassandra.Repo
+	search search.Client
+}
 
-func New(repo cassandra.Repo) *Server { return &Server{repo: repo} }
+func New(repo cassandra.Repo, sc search.Client) *Server {
+	return &Server{repo: repo, search: sc}
+}
 
 func (s *Server) Handler() http.Handler {
 	r := chi.NewRouter()
 	r.Get("/query/v1/traces", s.list)
 	r.Get("/query/v1/traces/{traceId}", s.byID)
+	r.Get("/query/v1/search", s.searchNodes)
+	r.Get("/query/v1/metrics/endpoints", s.endpoints)
 	return r
 }
 
@@ -29,12 +38,29 @@ func (s *Server) list(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "companyId, from, to required", 400)
 		return
 	}
-	items, err := s.repo.ListTraces(companyID, from, to, r.URL.Query().Get("status"), r.URL.Query().Get("service"))
+
+	// Parse pagination params
+	page := 1
+	pageSize := 50
+	if p := r.URL.Query().Get("page"); p != "" {
+		fmt.Sscanf(p, "%d", &page)
+		if page < 1 {
+			page = 1
+		}
+	}
+	if ps := r.URL.Query().Get("pageSize"); ps != "" {
+		fmt.Sscanf(ps, "%d", &pageSize)
+		if pageSize < 1 || pageSize > 200 {
+			pageSize = 50
+		}
+	}
+
+	result, err := s.repo.ListTraces(companyID, from, to, r.URL.Query().Get("status"), r.URL.Query().Get("service"), page, pageSize)
 	if err != nil {
 		http.Error(w, err.Error(), 500)
 		return
 	}
-	_ = json.NewEncoder(w).Encode(map[string]any{"items": items})
+	_ = json.NewEncoder(w).Encode(result)
 }
 
 func (s *Server) byID(w http.ResponseWriter, r *http.Request) {
@@ -44,4 +70,64 @@ func (s *Server) byID(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	_ = json.NewEncoder(w).Encode(graph)
+}
+
+func (s *Server) searchNodes(w http.ResponseWriter, r *http.Request) {
+	companyID := r.URL.Query().Get("companyId")
+	query := r.URL.Query().Get("query")
+
+	if companyID == "" || query == "" {
+		http.Error(w, "companyId and query required", http.StatusBadRequest)
+		return
+	}
+
+	if s.search == nil {
+		http.Error(w, "search not available", http.StatusServiceUnavailable)
+		return
+	}
+
+	// Parse pagination params
+	page := 1
+	pageSize := 50
+	if p := r.URL.Query().Get("page"); p != "" {
+		fmt.Sscanf(p, "%d", &page)
+		if page < 1 {
+			page = 1
+		}
+	}
+	if ps := r.URL.Query().Get("pageSize"); ps != "" {
+		fmt.Sscanf(ps, "%d", &pageSize)
+		if pageSize < 1 || pageSize > 200 {
+			pageSize = 50
+		}
+	}
+
+	results, err := s.search.SearchPaginated(r.Context(), "nodes", query, companyID, page, pageSize)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	_ = json.NewEncoder(w).Encode(results)
+}
+
+func (s *Server) endpoints(w http.ResponseWriter, r *http.Request) {
+	companyID := r.URL.Query().Get("companyId")
+	day := r.URL.Query().Get("day")
+	if day == "" {
+		day = time.Now().Format("2006-01-02")
+	}
+
+	if companyID == "" {
+		http.Error(w, "companyId is required", http.StatusBadRequest)
+		return
+	}
+
+	endpoints, err := s.repo.ListEndpoints(companyID, day)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	_ = json.NewEncoder(w).Encode(map[string]any{"items": endpoints})
 }

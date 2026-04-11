@@ -8,6 +8,7 @@ import (
 	"logs-query/internal/config"
 	"logs-query/internal/infra/cassandra"
 	httpx "logs-query/internal/infra/http"
+	search "shared-search"
 
 	"github.com/gocql/gocql"
 )
@@ -33,7 +34,13 @@ func main() {
 		log.Fatalf("failed to connect to cassandra after retries: %v", err)
 	}
 	defer session.Close()
-	srv := httpx.New(cassandra.Repo{Session: session})
+
+	searchClient, err := search.NewClient(cfg.OpenSearchHosts)
+	if err != nil {
+		log.Printf("failed to connect to opensearch: %v", err)
+	}
+
+	srv := httpx.New(cassandra.Repo{Session: session}, searchClient)
 	log.Printf("logs-query listening on :%s", cfg.Port)
 	log.Fatal(http.ListenAndServe(":"+cfg.Port, srv.Handler()))
 }

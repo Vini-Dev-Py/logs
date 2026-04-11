@@ -20,6 +20,7 @@ services:
     ports:
       - "5432:5432"
     volumes:
+      - postgres_data:/var/lib/postgresql/data
       - ./infra/migrations:/workspace/infra/migrations:ro
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U logs"]
@@ -38,11 +39,35 @@ services:
       timeout: 15s
       retries: 5
 
+  opensearch:
+    image: opensearchproject/opensearch:2.11.1
+    environment:
+      - discovery.type=single-node
+      - plugins.security.disabled=true
+      - OPENSEARCH_JAVA_OPTS=-Xms512m -Xmx512m
+    ports:
+      - "9200:9200"
+      - "9600:9600"
+    healthcheck:
+      test:
+        ["CMD-SHELL", "curl -s http://localhost:9200 | grep -q 'cluster_name'"]
+      interval: 10s
+      timeout: 10s
+      retries: 5
+    labels:
+      - traefik.enable=true
+      - traefik.http.routers.opensearch.rule=PathPrefix(`/opensearch`)
+      - traefik.http.routers.opensearch.middlewares=opensearch-strip
+      - traefik.http.middlewares.opensearch-strip.stripprefix.prefixes=/opensearch
+      - traefik.http.routers.opensearch.entrypoints=web
+      - traefik.http.services.opensearch.loadbalancer.server.port=9200
+
   cassandra:
     image: cassandra:5.0
     ports:
       - "9042:9042"
     volumes:
+      - cassandra_data:/var/lib/cassandra
       - ./infra/cassandra:/workspace/infra/cassandra:ro
     healthcheck:
       test:
@@ -71,12 +96,17 @@ services:
       - traefik.http.services.cassandra-web.loadbalancer.server.port=8083
 
   logs-bff:
-    build: ./apps/logs-bff
+    build:
+      context: .
+      dockerfile: ./apps/logs-bff/Dockerfile
     environment:
       PORT: 8081
       DATABASE_URL: postgres://logs:logs@postgres:5432/logs?sslmode=disable
       JWT_SECRET: super-secret
       QUERY_URL: http://logs-query:8084
+      # Dogfooding: sends its own traces to the OTLP receiver
+      OTEL_EXPORTER_OTLP_ENDPOINT: http://logs-ingest:8082
+      LOGS_API_KEY: logs_dev_api_key
     depends_on:
       postgres:
         condition: service_healthy
@@ -87,7 +117,9 @@ services:
       - traefik.http.services.logs-bff.loadbalancer.server.port=8081
 
   logs-ingest:
-    build: ./apps/logs-ingest
+    build:
+      context: .
+      dockerfile: ./apps/logs-ingest/Dockerfile
     environment:
       PORT: 8082
       DATABASE_URL: postgres://logs:logs@postgres:5432/logs?sslmode=disable
@@ -98,28 +130,40 @@ services:
       rabbitmq:
         condition: service_healthy
     deploy:
-      replicas: 2
+      replicas: 1
     labels:
       - traefik.enable=true
+      # Native ingest route
       - traefik.http.routers.logs-ingest.rule=PathPrefix(`/ingest`)
       - traefik.http.routers.logs-ingest.entrypoints=web
-      - traefik.http.services.logs-ingest.loadbalancer.server.port=8082
+      - traefik.http.routers.logs-ingest.service=logs-ingest-svc
+      - traefik.http.services.logs-ingest-svc.loadbalancer.server.port=8082
+      # OTLP receiver route (standard OpenTelemetry endpoint)
+      - traefik.http.routers.logs-otlp.rule=PathPrefix(`/v1/traces`)
+      - traefik.http.routers.logs-otlp.entrypoints=web
+      - traefik.http.routers.logs-otlp.service=logs-otlp-svc
+      - traefik.http.services.logs-otlp-svc.loadbalancer.server.port=8082
 
   logs-worker:
-    build: ./apps/logs-worker
+    build:
+      context: .
+      dockerfile: ./apps/logs-worker/Dockerfile
     environment:
       RABBITMQ_URL: amqp://guest:guest@rabbitmq:5672/
       CASSANDRA_HOSTS: cassandra
+      OPENSEARCH_HOSTS: http://opensearch:9200
     depends_on:
       rabbitmq:
         condition: service_healthy
       cassandra:
         condition: service_healthy
     deploy:
-      replicas: 2
+      replicas: 1
 
   logs-query:
-    build: ./apps/logs-query
+    build:
+      context: .
+      dockerfile: ./apps/logs-query/Dockerfile
     environment:
       PORT: 8084
       CASSANDRA_HOSTS: cassandra
@@ -141,3 +185,34 @@ services:
       - traefik.http.routers.web.rule=PathPrefix(`/`)
       - traefik.http.routers.web.entrypoints=web
       - traefik.http.services.web.loadbalancer.server.port=5173
+
+  logs-simulator:
+    build:
+      context: .
+      dockerfile: ./apps/logs-simulator/Dockerfile
+    environment:
+      TARGET_URL: http://logs-ingest:8082/ingest/v1/log-events
+      OTLP_URL: http://logs-ingest:8082/v1/traces
+      API_KEY: logs_dev_api_key
+      MODE: native
+      WORKERS: "10"
+      BURST_SIZE: "50"
+      BURSTS: "20"
+      BURST_DELAY: "2s"
+      SEARCH_URL: http://logs-bff:8081/api/search
+      SEARCH_QUERY: SELECT
+      COMPANY_ID: c152767f-4e9b-4311-b896-a7a37c9ccbfe
+    depends_on:
+      logs-ingest:
+        condition: service_started
+      logs-bff:
+        condition: service_started
+    profiles:
+      - simulation
+    restart: "no"
+
+volumes:
+  postgres_data:
+    driver: local
+  cassandra_data:
+    driver: local
