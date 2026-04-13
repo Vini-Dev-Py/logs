@@ -2,6 +2,7 @@ package cassandra
 
 import (
 	"encoding/json"
+	"sort"
 	"time"
 
 	"github.com/gocql/gocql"
@@ -30,62 +31,98 @@ type PaginatedResult[T any] struct {
 }
 
 func (r Repo) ListTraces(companyID string, from, to time.Time, status, service string, page, pageSize int) (PaginatedResult[TraceSummary], error) {
-	// Generate all days in the date range to query each partition
+	// Generate days in REVERSE order (newest first) to leverage Cassandra's DESC ordering
 	var days []string
-	current := from
-	for !current.After(to) {
+	current := to
+	for !current.Before(from) {
 		days = append(days, current.Format("2006-01-02"))
-		current = current.AddDate(0, 0, 1)
+		current = current.AddDate(0, 0, -1)
+	}
+
+	// Smart limit: fetch enough rows to fill the page + buffer for filtering
+	// For page 1, we can be aggressive; for deeper pages we need more
+	fetchLimit := pageSize * 5
+	if fetchLimit > 500 {
+		fetchLimit = 500 // Cap to avoid OOM
 	}
 
 	allTraces := []TraceSummary{}
-	
-	// Query each day partition
+	collected := 0
+
+	// Query each day partition (newest first - leverages Cassandra DESC ordering)
 	for _, day := range days {
-		iter := r.Session.Query("SELECT started_at,trace_id,status,root_operation,service_name,http_method,http_path,http_status,duration_ms FROM traces_by_company_day WHERE company_id=? AND day=?", companyID, day).Iter()
-		
+		// Stop early if we already have enough for all pages up to requested
+		needed := page * pageSize
+		if collected >= needed && len(days) > 1 {
+			break
+		}
+
+		// Use LIMIT to avoid fetching entire day partitions
+		q := r.Session.Query(
+			"SELECT started_at,trace_id,status,root_operation,service_name,http_method,http_path,http_status,duration_ms FROM traces_by_company_day WHERE company_id=? AND day=? LIMIT ?",
+			companyID, day, fetchLimit,
+		)
+		iter := q.Iter()
+
 		for {
 			var s TraceSummary
-			var status, rootOp, svc, method, path *string
+			var st, rootOp, svc, method, path *string
 			var httpStatus, duration *int
-			
-			if !iter.Scan(&s.StartedAt, &s.TraceID, &status, &rootOp, &svc, &method, &path, &httpStatus, &duration) {
+
+			if !iter.Scan(&s.StartedAt, &s.TraceID, &st, &rootOp, &svc, &method, &path, &httpStatus, &duration) {
 				break
 			}
-			
+
 			// Dereference nullable pointers
-			if status != nil { s.Status = *status }
-			if rootOp != nil { s.RootOperation = *rootOp }
-			if svc != nil { s.ServiceName = *svc }
-			if method != nil { s.HTTPMethod = *method }
-			if path != nil { s.HTTPPath = *path }
-			if httpStatus != nil { s.HTTPStatus = *httpStatus }
-			if duration != nil { s.DurationMS = *duration }
-			
-			// Use >= and <= to include boundary traces
-			if !s.StartedAt.Before(from) && !s.StartedAt.After(to) {
-				if status != nil && *status != "" && s.Status != *status {
-					continue
-				}
-				if service != "" && s.ServiceName != service {
-					continue
-				}
-				allTraces = append(allTraces, s)
+			if st != nil {
+				s.Status = *st
 			}
+			if rootOp != nil {
+				s.RootOperation = *rootOp
+			}
+			if svc != nil {
+				s.ServiceName = *svc
+			}
+			if method != nil {
+				s.HTTPMethod = *method
+			}
+			if path != nil {
+				s.HTTPPath = *path
+			}
+			if httpStatus != nil {
+				s.HTTPStatus = *httpStatus
+			}
+			if duration != nil {
+				s.DurationMS = *duration
+			}
+
+			// Time range filter (Cassandra LIMIT may return rows outside range)
+			if s.StartedAt.Before(from) || s.StartedAt.After(to) {
+				continue
+			}
+
+			// Apply filters
+			if status != "" && s.Status != status {
+				continue
+			}
+			if service != "" && s.ServiceName != service {
+				continue
+			}
+
+			allTraces = append(allTraces, s)
+			collected++
 		}
+
 		if err := iter.Close(); err != nil {
 			return PaginatedResult[TraceSummary]{}, err
 		}
 	}
 
-	// Sort by StartedAt descending
-	for i := 0; i < len(allTraces); i++ {
-		for j := i + 1; j < len(allTraces); j++ {
-			if allTraces[j].StartedAt.After(allTraces[i].StartedAt) {
-				allTraces[i], allTraces[j] = allTraces[j], allTraces[i]
-			}
-		}
-	}
+	// Data is already mostly sorted (Cassandra DESC within each day)
+	// But since we query multiple days, do a final sort
+	sort.Slice(allTraces, func(i, j int) bool {
+		return allTraces[i].StartedAt.After(allTraces[j].StartedAt)
+	})
 
 	total := len(allTraces)
 	totalPages := 0
@@ -182,13 +219,9 @@ func (r Repo) ListEndpoints(companyID string, from, to time.Time) ([]EndpointSum
 	for _, v := range aggregated {
 		out = append(out, *v)
 	}
-	for i := 0; i < len(out); i++ {
-		for j := i + 1; j < len(out); j++ {
-			if out[j].Calls > out[i].Calls {
-				out[i], out[j] = out[j], out[i]
-			}
-		}
-	}
+	sort.Slice(out, func(i, j int) bool {
+		return out[i].Calls > out[j].Calls
+	})
 
 	return out, nil
 }
