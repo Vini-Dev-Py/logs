@@ -79,22 +79,6 @@ services:
       timeout: 10s
       retries: 15
 
-  cassandra-web:
-    image: ipushc/cassandra-web
-    environment:
-      CASSANDRA_HOSTS: cassandra
-      CASSANDRA_PORT: 9042
-    ports:
-      - "3000:8083"
-    depends_on:
-      cassandra:
-        condition: service_healthy
-    labels:
-      - traefik.enable=true
-      - traefik.http.routers.cassandra-web.rule=PathPrefix(`/cassandra`)
-      - traefik.http.routers.cassandra-web.entrypoints=web
-      - traefik.http.services.cassandra-web.loadbalancer.server.port=8083
-
   logs-bff:
     build:
       context: .
@@ -191,6 +175,7 @@ services:
       context: .
       dockerfile: ./apps/logs-simulator/Dockerfile
     environment:
+      PORT: 8085
       TARGET_URL: http://logs-ingest:8082/ingest/v1/log-events
       OTLP_URL: http://logs-ingest:8082/v1/traces
       API_KEY: logs_dev_api_key
@@ -202,14 +187,24 @@ services:
       SEARCH_URL: http://logs-bff:8081/api/search
       SEARCH_QUERY: SELECT
       COMPANY_ID: c152767f-4e9b-4311-b896-a7a37c9ccbfe
+      # Dev-only: prevents running in production
+      DEV_MODE: "true"
     depends_on:
       logs-ingest:
         condition: service_started
       logs-bff:
         condition: service_started
+    # Only starts with 'simulation' profile - never in production
     profiles:
       - simulation
-    restart: "no"
+    labels:
+      - traefik.enable=true
+      - traefik.http.routers.logs-simulator.rule=PathPrefix(`/simulator`)
+      - traefik.http.routers.logs-simulator.entrypoints=web
+      - traefik.http.routers.logs-simulator.service=logs-simulator-svc
+      - traefik.http.services.logs-simulator-svc.loadbalancer.server.port=8085
+      - traefik.http.middlewares.logs-simulator-stripprefix.stripprefix.prefixes=/simulator
+      - traefik.http.routers.logs-simulator.middlewares=logs-simulator-stripprefix
 
 volumes:
   postgres_data:

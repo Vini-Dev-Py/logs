@@ -1,106 +1,109 @@
-# Logs Simulator
+# Logs Simulator Server
 
-Simulador de carga para a plataforma **Logs**. Gera traces distribuídos realistas e os envia em massa para testar escalabilidade, busca textual e ingestão.
+Simulador de carga **on-demand** para testes de ingestão de logs e traces.
 
-## ⚙️ Cenários Simulados
+## Como funciona
 
-O simulator gera traces que representam fluxos reais de microserviços:
+O simulador roda como um **servidor HTTP contínuo** que aguarda requisições para iniciar simulações. Ele **NÃO** inicia automaticamente - você precisa chamá-lo via API.
 
-| Cenário | Descrição | Nodes |
-|---------|-----------|-------|
-| **E-Commerce** | Catálogo → Cache → Recommendations → ML Engine | 7 nodes |
-| **Payment Processing** | Checkout → Order → Stripe → Rollback (com 5% erro) | 5-6 nodes |
-| **User Authentication** | Login → DB → JWT → Redis Session → Audit | 5 nodes |
-| **Report Generation** | Heavy SQL → Cache Miss → PDF → S3 Upload | 5 nodes |
-| **Webhook Delivery** | Dispatch → Queue → Worker → External Delivery (10% erro) | 4-5 nodes |
-| **Data Sync** | CDC → Transform → Partner API → Mark Synced | 5 nodes |
-
-## 🚀 Como Usar
-
-### Via Docker (recomendado)
+## Inicialização
 
 ```bash
-# Carga leve: 100 traces, 10 workers
+# Iniciar o servidor do simulador (perfil simulation)
 make simulate
 
-# Carga pesada: 5000 traces
-BURSTS=100 BURST_SIZE=50 WORKERS=20 make simulate
-
-# Modo OTLP (OpenTelemetry)
-MODE=otlp make simulate
+# Ou diretamente
+docker compose --profile simulation up -d --build logs-simulator
 ```
 
-### Via Variáveis de Ambiente
+## Endpoints HTTP
+
+### Iniciar simulação
 
 ```bash
-# Configuração completa
-TARGET_URL=http://localhost/ingest/v1/log-events \
-OTLP_URL=http://localhost/v1/traces \
-API_KEY=logs_dev_api_key \
-MODE=native \
-WORKERS=10 \
-BURST_SIZE=50 \
-BURSTS=20 \
-BURST_DELAY=2s \
-SEARCH_URL=http://localhost/api/search \
-SEARCH_QUERY=SELECT \
-make simulate
+# Com configurações padrão
+curl -X POST http://localhost/simulator/simulate
+
+# Com configurações customizadas
+curl -X POST http://localhost/simulator/simulate \
+  -H "Content-Type: application/json" \
+  -d '{
+    "bursts": 10,
+    "burstSize": 25,
+    "mode": "native",
+    "companyId": "my-company-id"
+  }'
 ```
 
-### Via Go (local)
+### Verificar status
 
 ```bash
-cd apps/logs-simulator
-go mod tidy
-go run . 
-
-# Com parâmetros
-BURST_SIZE=100 BURSTS=50 go run .
+curl http://localhost/simulator/simulate
 ```
 
-## 📊 Métricas Reportadas
+Resposta:
 
-Ao final da execução, o simulator exibe:
+```json
+{
+  "id": "abc123...",
+  "status": "running", // ou "completed", "failed", "stopped"
+  "startedAt": "2026-04-12T10:00:00Z",
+  "config": {
+    "mode": "native",
+    "burstSize": 50,
+    "bursts": 20,
+    "companyId": "c152767f-..."
+  },
+  "totalSent": 500,
+  "totalOk": 498,
+  "totalFail": 2
+}
+```
 
-- **Total Events Sent**: Número total de nodes/events enviados
-- **Successful (2xx)**: Eventos aceitos pela API
-- **Failed**: Eventos que retornaram erro
-- **Search Queries OK/FAIL**: Validações de busca textual
-- **Throughput**: Events/segundo
-- **Success Rate**: % de sucesso
+### Parar simulação em andamento
 
-## 🔍 Validação de Busca Textual
-
-A cada 5 bursts, o simulator executa buscas automáticas:
-
-1. `SELECT` — busca queries SQL
-2. `INSERT` — busca inserts
-3. Query customizada via `SEARCH_QUERY`
-
-Isso valida que o **OpenSearch** está indexando corretamente os dados.
-
-## 🎯 Casos de Teste
-
-### Teste de Escalabilidade
 ```bash
-BURSTS=200 BURST_SIZE=100 WORKERS=50 make simulate
+curl -X POST http://localhost/simulator/simulate/stop
 ```
-→ 20.000 traces, ~100.000 events
 
-### Teste de Busca Textual
-```bash
-BURSTS=10 BURST_SIZE=50 SEARCH_QUERY="stripe" make simulate
-```
-→ Gera dados e valida a busca
+### Health check
 
-### Teste OTLP
 ```bash
-MODE=otlp BURSTS=50 BURST_SIZE=20 make simulate
+curl http://localhost/simulator/health
 ```
-→ Envia via OpenTelemetry HTTP/JSON
 
-### Teste de Resiliência (erros injetados)
-```bash
-# 5% payment errors, 10% webhook errors
-BURSTS=30 BURST_SIZE=50 make simulate
-```
+## Comandos Makefile
+
+| Comando                | Descrição                                         |
+| ---------------------- | ------------------------------------------------- |
+| `make simulate`        | Inicia o servidor e mostra logs                   |
+| `make simulate-run`    | Dispara uma simulação via HTTP                    |
+| `make simulate-status` | Verifica status da simulação                      |
+| `make simulate-stop`   | Para simulação em andamento                       |
+| `make simulate-light`  | Inicia com carga leve (5 bursts x 20 traces)      |
+| `make simulate-heavy`  | Inicia com carga pesada (100 bursts x 100 traces) |
+| `make simulate-otlp`   | Inicia usando formato OTLP                        |
+| `make simulator-down`  | Para o servidor do simulador                      |
+
+## Configuração via Variáveis de Ambiente
+
+| Variável       | Default                                        | Descrição                  |
+| -------------- | ---------------------------------------------- | -------------------------- |
+| `PORT`         | `8085`                                         | Porta do servidor          |
+| `TARGET_URL`   | `http://logs-ingest:8082/ingest/v1/log-events` | URL de ingestão nativa     |
+| `OTLP_URL`     | `http://logs-ingest:8082/v1/traces`            | URL de ingestão OTLP       |
+| `API_KEY`      | `logs_dev_api_key`                             | Chave de autenticação      |
+| `MODE`         | `native`                                       | Modo: `native` ou `otlp`   |
+| `WORKERS`      | `10`                                           | Workers concorrentes       |
+| `BURST_SIZE`   | `50`                                           | Traces por burst (default) |
+| `BURSTS`       | `20`                                           | Número de bursts (default) |
+| `BURST_DELAY`  | `2s`                                           | Intervalo entre bursts     |
+| `SEARCH_URL`   | `http://logs-bff:8081/api/search`              | URL para validação         |
+| `SEARCH_QUERY` | `SELECT`                                       | Query de busca padrão      |
+| `COMPANY_ID`   | `c152767f-...`                                 | ID da empresa nos eventos  |
+
+## Notas
+
+- **Apenas para desenvolvimento**: O simulador usa o profile `simulation` e **nunca** sobe em produção
+- **Traefik**: Disponível em `/simulator/*` via reverse proxy
+- **Cenários**: Gera traces realistas de e-commerce, pagamentos, autenticação, relatórios, webhooks e sync de dados

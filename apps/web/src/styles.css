@@ -7,5 +7,167 @@
 body {
   @apply bg-slate-50 text-slate-900 antialiased transition-colors duration-200;
   @apply dark:bg-slate-950 dark:text-slate-100;
-  font-family: 'Inter', system-ui, -apple-system, sans-serif;
+  font-family:
+    "Inter",
+    system-ui,
+    -apple-system,
+    sans-serif;
+}
+
+/* ─── Scrollbar ──────────────────────────────────────────────── */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+::-webkit-scrollbar-track {
+  @apply bg-transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  @apply bg-slate-300 dark:bg-slate-700 rounded-full;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  @apply bg-slate-400 dark:bg-slate-600;
+}
+
+/* ─── Animations ─────────────────────────────────────────────── */
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes slideUp {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes slideIn {
+  from {
+    opacity: 0;
+    transform: translateX(-10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
+@keyframes shimmer {
+  0% {
+    background-position: -200% 0;
+  }
+  100% {
+    background-position: 200% 0;
+  }
+}
+
+@keyframes pulse-glow {
+  0%,
+  100% {
+    box-shadow: 0 0 0 0 rgba(99, 102, 241, 0.4);
+  }
+  50% {
+    box-shadow: 0 0 0 8px rgba(99, 102, 241, 0);
+  }
+}
+
+/* ─── Utility Classes ────────────────────────────────────────── */
+.animate-fade-in {
+  animation: fadeIn 0.3s ease-out;
+}
+
+.animate-slide-up {
+  animation: slideUp 0.4s ease-out;
+}
+
+.animate-slide-in {
+  animation: slideIn 0.3s ease-out;
+}
+
+/* ─── Skeleton Shimmer Effect ───────────────────────────────── */
+.skeleton-shimmer {
+  background: linear-gradient(
+    90deg,
+    hsl(220 13% 91%) 25%,
+    hsl(220 13% 95%) 50%,
+    hsl(220 13% 91%) 75%
+  );
+  background-size: 200% 100%;
+  animation: shimmer 1.5s ease-in-out infinite;
+}
+
+.dark .skeleton-shimmer {
+  background: linear-gradient(
+    90deg,
+    hsl(222 47% 11%) 25%,
+    hsl(222 47% 15%) 50%,
+    hsl(222 47% 11%) 75%
+  );
+  background-size: 200% 100%;
+}
+
+/* ─── Focus Ring ─────────────────────────────────────────────── */
+*:focus-visible {
+  @apply outline-none ring-2 ring-indigo-500 ring-offset-2 dark:ring-offset-slate-950;
+}
+
+/* ─── Selection ──────────────────────────────────────────────── */
+::selection {
+  @apply bg-indigo-200 text-indigo-900 dark:bg-indigo-900/50 dark:text-indigo-100;
+}
+
+/* ─── Code ───────────────────────────────────────────────────── */
+code {
+  @apply font-mono text-sm;
+}
+
+/* ─── Links ──────────────────────────────────────────────────── */
+a {
+  @apply transition-colors duration-150;
+}
+
+/* ─── Table Styles ───────────────────────────────────────────── */
+table {
+  @apply border-collapse;
+}
+
+th {
+  @apply font-semibold text-xs uppercase tracking-wider;
+}
+
+/* ─── Card Hover Effects ─────────────────────────────────────── */
+.card-hover {
+  @apply transition-all duration-200 hover:shadow-md hover:-translate-y-0.5;
+}
+
+/* ─── Button Active State ────────────────────────────────────── */
+button:active {
+  @apply scale-[0.98];
+}
+
+/* ─── Input Autofill ─────────────────────────────────────────── */
+input:-webkit-autofill,
+input:-webkit-autofill:hover,
+input:-webkit-autofill:focus {
+  -webkit-box-shadow: 0 0 0px 1000px hsl(0 0% 100%) inset !important;
+  -webkit-text-fill-color: hsl(222 47% 11%) !important;
+}
+
+.dark input:-webkit-autofill,
+.dark input:-webkit-autofill:hover,
+.dark input:-webkit-autofill:focus {
+  -webkit-box-shadow: 0 0 0px 1000px hsl(222 47% 11%) inset !important;
+  -webkit-text-fill-color: hsl(213 31% 91%) !important;
 }

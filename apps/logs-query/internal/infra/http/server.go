@@ -113,17 +113,29 @@ func (s *Server) searchNodes(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) endpoints(w http.ResponseWriter, r *http.Request) {
 	companyID := r.URL.Query().Get("companyId")
-	day := r.URL.Query().Get("day")
-	if day == "" {
-		day = time.Now().Format("2006-01-02")
-	}
+	fromS := r.URL.Query().Get("from")
+	toS := r.URL.Query().Get("to")
 
 	if companyID == "" {
 		http.Error(w, "companyId is required", http.StatusBadRequest)
 		return
 	}
 
-	endpoints, err := s.repo.ListEndpoints(companyID, day)
+	// Default to last 7 days if not specified
+	from := time.Now().AddDate(0, 0, -7)
+	to := time.Now()
+	if fromS != "" {
+		if t, err := time.Parse("2006-01-02", fromS); err == nil {
+			from = t
+		}
+	}
+	if toS != "" {
+		if t, err := time.Parse("2006-01-02", toS); err == nil {
+			to = t
+		}
+	}
+
+	endpoints, err := s.repo.ListEndpoints(companyID, from, to)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return

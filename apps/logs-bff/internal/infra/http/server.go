@@ -218,11 +218,11 @@ func (s *Server) searchNodes(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) endpoints(w http.ResponseWriter, r *http.Request) {
 	cid := r.Context().Value("companyId").(string)
-	day := r.URL.Query().Get("day")
-	url := fmt.Sprintf("%s/query/v1/metrics/endpoints?companyId=%s", s.cfg.QueryURL, cid)
-	if day != "" {
-		url += fmt.Sprintf("&day=%s", day)
-	}
+
+	q := r.URL.Query()
+	q.Set("companyId", cid)
+
+	url := fmt.Sprintf("%s/query/v1/metrics/endpoints?%s", s.cfg.QueryURL, q.Encode())
 
 	req, err := http.NewRequestWithContext(r.Context(), http.MethodGet, url, nil)
 	if err != nil {
